@@ -3,15 +3,29 @@
 # Triggers on every push to 'main'.
 # Also provides a manual trigger (workflow_dispatch) for on-demand deploys.
 #
-# Required GitHub Secrets (Settings → Secrets and variables → Actions):
-#   AZURE_WEBAPP_PUBLISH_PROFILE  – XML publish profile from App Service
-#   FRED_API_KEY                  – FRED Data API key
-#   FRASER_API_KEY                – FRASER API key
-#   GITHUB_TOKEN_AI               – GitHub PAT for the Models API (AI features)
+# ── One-time setup ──────────────────────────────────────────────────────────
 #
-# App Service configuration (must match your Azure resources):
-#   AZURE_WEBAPP_NAME: economonitor
-#   NODE_VERSION:      20.x
+# 1. Create a service principal with Contributor access to the resource group:
+#
+#    az ad sp create-for-rbac \
+#      --name "sp-economonitor-github" \
+#      --role contributor \
+#      --scopes /subscriptions/<subscription-id>/resourceGroups/rg-economonitor \
+#      --sdk-auth
+#
+#    Copy the entire JSON output.
+#
+# 2. In your GitHub repo go to Settings → Secrets and variables → Actions
+#    and add these repository secrets:
+#
+#    Secret name               Value
+#    ─────────────────────     ─────────────────────────────────────────────
+#    AZURE_CREDENTIALS         JSON blob from step 1
+#    FRED_API_KEY              Your FRED API key
+#    FRASER_API_KEY            Your FRASER API key
+#    GITHUB_TOKEN_AI           Your GitHub PAT (for Models API / AI features)
+#
+# ── App info (edit if you rename the Azure resources) ───────────────────────
 
 name: Deploy to Azure App Service
 
@@ -22,13 +36,15 @@ on:
   workflow_dispatch:
 
 env:
-  AZURE_WEBAPP_NAME: economonitor   # change if your app name differs
-  NODE_VERSION: "20.x"
+  AZURE_WEBAPP_NAME:      economonitor
+  AZURE_RESOURCE_GROUP:   rg-economonitor
+  NODE_VERSION:           "20.x"
 
 permissions:
   contents: read
 
 jobs:
+  # ── Build ─────────────────────────────────────────────────────────────────
   build:
     name: Build
     runs-on: ubuntu-latest
@@ -46,23 +62,25 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build Next.js application
+      - name: Build Next.js application (standalone mode)
         env:
-          # Expose any build-time env vars here (none currently needed for Next.js)
           NODE_ENV: production
         run: npm run build
 
-      # Package everything Azure needs to run the app.
-      # .next/ contains the compiled output; node_modules are installed on Azure
-      # by Oryx after deployment, so we omit them here to keep the zip small.
+      # next.config.ts has output: "standalone", which produces a self-contained
+      # server in .next/standalone (~37 MB) instead of shipping all of node_modules.
+      # Static assets and public/ must be copied in before zipping.
+      - name: Assemble standalone bundle
+        run: |
+          cp -r .next/static .next/standalone/.next/static
+          cp -r public        .next/standalone/public
+
       - name: Create deployment package
         run: |
-          zip -r deploy.zip \
-            .next \
-            public \
-            package.json \
-            package-lock.json \
-            next.config.ts
+          cd .next/standalone
+          zip -r ../../deploy.zip .
+          cd ../..
+          echo "deploy.zip size: $(du -sh deploy.zip | cut -f1)"
 
       - name: Upload deployment artifact
         uses: actions/upload-artifact@v4
@@ -71,6 +89,7 @@ jobs:
           path: deploy.zip
           retention-days: 3
 
+  # ── Deploy ────────────────────────────────────────────────────────────────
   deploy:
     name: Deploy
     runs-on: ubuntu-latest
@@ -85,32 +104,33 @@ jobs:
         with:
           name: deploy-package
 
-      - name: Deploy to Azure Web Apps
+      - name: Log in to Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Deploy to Azure App Service
         uses: azure/webapps-deploy@v3
         with:
-          app-name: ${{ env.AZURE_WEBAPP_NAME }}
-          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
-          package: deploy.zip
+          app-name:  ${{ env.AZURE_WEBAPP_NAME }}
+          package:   deploy.zip
 
-      # Sync runtime App Settings so secrets are always up to date.
-      # This step is optional if you manage settings only through the portal/CLI.
-      - name: Sync App Settings via Azure CLI
+      # Keep runtime secrets in sync with what's in GitHub Secrets.
+      # Remove or comment out this step if you manage App Settings manually.
+      - name: Sync App Settings
         uses: azure/CLI@v2
         with:
           inlineScript: |
             az webapp config appsettings set \
               --name ${{ env.AZURE_WEBAPP_NAME }} \
-              --resource-group rg-economonitor \
+              --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
               --settings \
                 NODE_ENV=production \
                 FRED_API_KEY="${{ secrets.FRED_API_KEY }}" \
                 FRASER_API_KEY="${{ secrets.FRASER_API_KEY }}" \
                 GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN_AI }}"
-        # This step requires az login credentials. It's easiest to remove this
-        # step and manage App Settings once via the portal or CLI manually.
-        # To enable it, replace with azure/login@v2 + service principal first.
-        continue-on-error: true
 
+  # ── Validate ──────────────────────────────────────────────────────────────
   validate:
     name: Validate
     runs-on: ubuntu-latest
@@ -118,6 +138,32 @@ jobs:
 
     steps:
       - name: Wait for app to warm up
+        run: sleep 20
+
+      - name: Check homepage returns HTTP 200
+        run: |
+          STATUS=$(curl -o /dev/null -s -w "%{http_code}" \
+            --max-time 30 \
+            "https://${{ env.AZURE_WEBAPP_NAME }}.azurewebsites.net")
+          echo "Homepage status: $STATUS"
+          [ "$STATUS" = "200" ] || exit 1
+
+      - name: Check AI chat endpoint
+        run: |
+          STATUS=$(curl -o /dev/null -s -w "%{http_code}" \
+            --max-time 30 \
+            -X POST \
+            -H "Content-Type: application/json" \
+            -d '{"messages":[{"role":"user","content":"What is GDP?"}]}' \
+            "https://${{ env.AZURE_WEBAPP_NAME }}.azurewebsites.net/api/ai/chat")
+          echo "Chat API status: $STATUS"
+          [ "$STATUS" = "200" ] || [ "$STATUS" = "206" ] || exit 1
+
+      - name: Deployment summary
+        run: |
+          echo "✅ EconoMonitor deployed successfully"
+          echo "🌐 URL: https://${{ env.AZURE_WEBAPP_NAME }}.azurewebsites.net"
+
         run: sleep 20
 
       - name: Check homepage returns HTTP 200
