@@ -61,8 +61,9 @@ az group create \
   --location eastus
 ```
 
-> **Location choice**: `eastus` is generally the lowest-latency region for US users and
-> has broad service availability. Other good choices: `westus2`, `eastus2`, `westeurope`.
+> **Location choice**: `eastus` is generally the lowest-latency region for US users.
+> However, quota for new App Service plans can be 0 in eastus — if you hit that error,
+> use `westus2` (or `eastus2`, `westeurope`). The live deployment uses **westus2**.
 
 ### 2b. App Service Plan
 
@@ -216,42 +217,85 @@ az webapp deploy \
 ## 6. Automated CI/CD (GitHub Actions)
 
 The workflow at [`.github/workflows/azure-deploy.yml`](./.github/workflows/azure-deploy.yml)
-automates build and deploy on every push to `main`.
+automates build and deploy on every push to `main`. It uses **OIDC (OpenID Connect)**
+to authenticate with Azure — no long-lived credential JSON is stored in GitHub.
 
-### 6a. Get the Publish Profile
+### 6a. Create a Service Principal
 
 ```bash
-az webapp deployment list-publishing-profiles \
-  --name economonitor \
-  --resource-group rg-economonitor \
-  --xml \
-  --output tsv
+# Create the service principal with Contributor access to the resource group
+az ad sp create-for-rbac \
+  --name sp-economonitor-github \
+  --role contributor \
+  --scopes /subscriptions/<subscription-id>/resourceGroups/rg-economonitor \
+  --sdk-auth false
 ```
 
-Copy the entire XML output.
+Note the `appId` (client ID) from the output — you will need it in 6b.
 
-### 6b. Add the Secret to GitHub
+> If the SP already exists, retrieve its `appId` with:
+> ```bash
+> az ad sp list --display-name "sp-economonitor-github" --query "[0].appId" -o tsv
+> ```
+
+### 6b. Add Federated Credentials (OIDC)
+
+Federated credentials let GitHub Actions prove its identity to Azure without a password.
+Create one credential for each trigger that should be able to deploy:
+
+```bash
+# 1. Pushes to main branch
+az ad app federated-credential create \
+  --id <appId-from-6a> \
+  --parameters '{
+    "name": "github-actions-main",
+    "issuer": "https://token.actions.githubusercontent.com",
+    "subject": "repo:russrimm/EconoMonitor:ref:refs/heads/main",
+    "audiences": ["api://AzureADTokenExchange"]
+  }'
+
+# 2. Manual workflow_dispatch (via 'production' environment)
+az ad app federated-credential create \
+  --id <appId-from-6a> \
+  --parameters '{
+    "name": "github-actions-dispatch",
+    "issuer": "https://token.actions.githubusercontent.com",
+    "subject": "repo:russrimm/EconoMonitor:environment:production",
+    "audiences": ["api://AzureADTokenExchange"]
+  }'
+```
+
+Both credentials are already created on the live service principal.
+
+### 6c. Add GitHub Repository Secrets
 
 1. Go to your repo → **Settings** → **Secrets and variables** → **Actions**
-2. Click **New repository secret**
-3. Name: `AZURE_WEBAPP_PUBLISH_PROFILE`
-4. Value: paste the XML from the previous step
+2. Add each of the following **repository secrets**:
 
-### 6c. Add API Key Secrets
+| Secret Name | Value | How to find it |
+|-------------|-------|----------------|
+| `AZURE_CLIENT_ID` | SP app ID | `az ad sp list --display-name sp-economonitor-github --query "[0].appId" -o tsv` |
+| `AZURE_TENANT_ID` | Azure tenant ID | `az account show --query tenantId -o tsv` |
+| `AZURE_SUBSCRIPTION_ID` | Azure subscription ID | `az account show --query id -o tsv` |
+| `FRED_API_KEY` | FRED API key | [api.stlouisfed.org](https://api.stlouisfed.org/api_key.html) |
+| `FRASER_API_KEY` | FRASER API key | [fraser.stlouisfed.org](https://fraser.stlouisfed.org) |
+| `GITHUB_TOKEN_AI` | GitHub PAT (Models API) | GitHub → Settings → Personal access tokens |
 
-Repeat step 6b for each of these secrets (matching the names in the workflow file):
+> `GITHUB_TOKEN_AI` is used instead of `GITHUB_TOKEN` to avoid conflicting with
+> GitHub Actions' built-in `GITHUB_TOKEN` secret. The workflow maps it to the
+> `GITHUB_TOKEN` App Setting that the app reads at runtime.
 
-| Secret Name | Value |
-|-------------|-------|
-| `FRED_API_KEY` | Your FRED API key |
-| `FRASER_API_KEY` | Your FRASER API key |
-| `GITHUB_TOKEN_AI` | Your GitHub PAT for Models API |
+### 6d. How the Workflow Runs
 
-> The workflow uses `GITHUB_TOKEN_AI` to avoid conflicting with GitHub's built-in
-> `GITHUB_TOKEN` secret.
+Every push to `main` (or a manual dispatch) triggers three sequential jobs:
 
-After both secrets are in place, every push to `main` will trigger an automatic
-build + deploy. See [`.github/workflows/azure-deploy.yml`](./.github/workflows/azure-deploy.yml)
+| Job | What it does |
+|-----|--------------|
+| **Build** | `npm ci` → `npm run build` → assembles standalone bundle → uploads `deploy.zip` artifact |
+| **Deploy** | Downloads artifact → logs in via OIDC → deploys zip → syncs App Settings from secrets |
+| **Validate** | Waits 20 s → `curl` homepage (200) → `curl` AI chat endpoint (200/206) |
+
+See [`.github/workflows/azure-deploy.yml`](./.github/workflows/azure-deploy.yml)
 for the full workflow definition.
 
 ---
@@ -425,13 +469,21 @@ az webapp config appsettings set \
 
 1. Check live logs: `az webapp log tail --name economonitor --resource-group rg-economonitor`
 2. Confirm `NODE_ENV=production` is set in App Settings
-3. Confirm the startup command is `npm run start`
-4. Make sure `.next/` was included in the zip — it is required at runtime
+3. Confirm the startup command is `node server.js` (not `npm run start`)
+4. Make sure the standalone bundle was zipped correctly — `server.js` must be at the zip root
 
 ### "Cannot find module" errors in logs
 
-The build output was not included. Re-run `npm run build` locally and re-zip:
-`.next` directory must be in the zip root alongside `package.json`.
+The standalone bundle was not assembled correctly. Re-run the build and copy steps:
+
+```bash
+npm run build
+cp -r .next/static .next/standalone/.next/static
+cp -r public        .next/standalone/public
+cd .next/standalone && zip -r ../../deploy.zip . && cd ../..  
+```
+
+`server.js` and `.next/` must both be at the root of the zip.
 
 ### AI chat returns errors
 
@@ -477,10 +529,13 @@ az group delete \
 ## Quick Reference
 
 ```
-Resource Group : rg-economonitor
+Resource Group : rg-economonitor  (region: westus2)
 App Service Plan: asp-economonitor  (Linux, B2)
 Web App        : economonitor
 Runtime        : NODE:20-lts
-Startup command: npm run start
+Startup command: node server.js
+Deploy output  : standalone  (next.config.ts → output: "standalone")
+Deploy size    : ~8.6 MB zip  (vs 324 MB full .next)
+CI/CD auth     : OIDC (azure/login@v2, no stored credential blob)
 Default URL    : https://economonitor.azurewebsites.net
 ```
