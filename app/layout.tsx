@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "EconoMonitor — FRED Economic Research",
+  title: "EconoMonitor — Economic Research",
   description:
     "Explore, chart, and compare thousands of economic indicators from the Federal Reserve Bank of St. Louis FRED database.",
 };
