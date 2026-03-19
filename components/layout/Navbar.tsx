@@ -65,7 +65,8 @@ export function Navbar() {
           EconoMonitor
         </Link>
 
-        {/* Search */}
+        {/* Search — hidden on /search since that page has its own full search bar */}
+        {!pathname.startsWith('/search') && (
         <form onSubmit={handleSearch} className="flex-1 max-w-sm relative">
           <Search
             className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4"
@@ -85,6 +86,7 @@ export function Navbar() {
             }}
           />
         </form>
+        )}
 
         {/* Desktop nav */}
         <nav className="hidden md:flex items-center gap-0.5 ml-2">
