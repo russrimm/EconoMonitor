@@ -15,10 +15,14 @@ import {
 
 // ─── Series ────────────────────────────────────────────────────────────────────
 
-export function useSeriesSearch(query: string, offset = 0) {
+export function useSeriesSearch(
+  query: string,
+  offset = 0,
+  orderBy: 'popularity' | 'last_updated' | 'title' = 'popularity',
+) {
   return useQuery({
-    queryKey: ['series-search', query, offset],
-    queryFn: () => searchSeries(query, offset),
+    queryKey: ['series-search', query, offset, orderBy],
+    queryFn: () => searchSeries(query, offset, 20, orderBy),
     enabled: query.trim().length > 0,
     staleTime: 5 * 60 * 1000,
   });

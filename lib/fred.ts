@@ -82,7 +82,12 @@ function rangeToStartDate(range: ObservationRange): string | undefined {
 
 // ─── Series ────────────────────────────────────────────────────────────────────
 
-export async function searchSeries(query: string, offset = 0, limit = 20) {
+export async function searchSeries(
+  query: string,
+  offset = 0,
+  limit = 20,
+  orderBy: 'popularity' | 'last_updated' | 'title' = 'popularity',
+) {
   return fredFetch<{
     seriess: FredSeries[];
     count: number;
@@ -92,8 +97,8 @@ export async function searchSeries(query: string, offset = 0, limit = 20) {
     search_text: query,
     offset: String(offset),
     limit: String(limit),
-    order_by: 'popularity',
-    sort_order: 'desc',
+    order_by: orderBy,
+    sort_order: orderBy === 'title' ? 'asc' : 'desc',
   });
 }
 

@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { ChevronRight, Folder } from 'lucide-react';
+import { ChevronRight, Folder, Search } from 'lucide-react';
 import {
   useCategory,
   useCategoryChildren,
@@ -16,6 +16,7 @@ export default function CategoryDetailPage() {
   const { categoryId } = useParams<{ categoryId: string }>();
   const id = parseInt(categoryId, 10);
   const [offset, setOffset] = useState(0);
+  const [childFilter, setChildFilter] = useState('');
 
   const { toggle, isPinned } = usePinnedSeries();
 
@@ -29,6 +30,10 @@ export default function CategoryDetailPage() {
   const totalSeries = seriesData?.count ?? 0;
   const totalPages = Math.ceil(totalSeries / 20);
   const currentPage = Math.floor(offset / 20) + 1;
+
+  const filteredChildren = childFilter.trim()
+    ? children.filter((c) => c.name.toLowerCase().includes(childFilter.toLowerCase()))
+    : children;
 
   return (
     <div className="flex flex-col gap-6">
@@ -60,11 +65,30 @@ export default function CategoryDetailPage() {
       {/* Sub-categories */}
       {children.length > 0 && (
         <section>
-          <h2 className="font-semibold text-sm mb-3" style={{ color: 'var(--text)' }}>
-            Sub-categories
-          </h2>
+          <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+            <h2 className="font-semibold text-sm" style={{ color: 'var(--text)' }}>
+              Sub-categories
+              {childFilter.trim() && (
+                <span className="ml-1.5 font-normal" style={{ color: 'var(--text-muted)' }}>
+                  ({filteredChildren.length} of {children.length})
+                </span>
+              )}
+            </h2>
+            {children.length > 6 && (
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />
+                <input
+                  value={childFilter}
+                  onChange={(e) => setChildFilter(e.target.value)}
+                  placeholder="Filter sub-categories…"
+                  className="pl-7 pr-3 py-1 text-xs rounded-lg focus:outline-none focus:ring-2"
+                  style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)' }}
+                />
+              </div>
+            )}
+          </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {children.map((child) => (
+            {filteredChildren.map((child) => (
               <Link
                 key={child.id}
                 href={`/categories/${child.id}`}

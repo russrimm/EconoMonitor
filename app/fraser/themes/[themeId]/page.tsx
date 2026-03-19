@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { ArrowLeft, ExternalLink, ChevronLeft, ChevronRight, FileText, Tag } from 'lucide-react';
+import { ArrowLeft, ChevronLeft, ChevronRight, FileText, Search, Tag } from 'lucide-react';
 import { useFraserTheme, useThemeRecords } from '@/hooks/useFraserQuery';
 import {
   extractTitle,
@@ -66,17 +66,7 @@ function RecordRow({ record }: { record: FraserRecord }) {
         >
           {type}
         </span>
-        {fraserUrl !== '#' && (
-          <a
-            href={fraserUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{ color: 'var(--text-muted)' }}
-            aria-label="View on FRASER"
-          >
-            <ExternalLink className="w-3.5 h-3.5" />
-          </a>
-        )}
+
       </div>
     </div>
   );
@@ -85,14 +75,25 @@ function RecordRow({ record }: { record: FraserRecord }) {
 export default function ThemePage() {
   const { themeId } = useParams<{ themeId: string }>();
   const [page, setPage] = useState(1);
+  const [keywordFilter, setKeywordFilter] = useState('');
+  const [typeFilter, setTypeFilter] = useState<'all' | 'title' | 'item'>('all');
 
   const themeQuery = useFraserTheme(themeId);
   const recordsQuery = useThemeRecords(themeId, PAGE_SIZE, page);
 
   const theme = themeQuery.data?.records?.[0];
-  const records = recordsQuery.data?.records ?? [];
+  const allRecords = recordsQuery.data?.records ?? [];
   const total = recordsQuery.data?.total ?? 0;
   const totalPages = Math.ceil(total / PAGE_SIZE);
+
+  const records = allRecords.filter((rec) => {
+    const recType = rec.recordInfo?.recordType ?? 'item';
+    const matchType = typeFilter === 'all' || recType === typeFilter;
+    const matchKeyword = keywordFilter.trim()
+      ? extractTitle(rec.titleInfo).toLowerCase().includes(keywordFilter.toLowerCase())
+      : true;
+    return matchType && matchKeyword;
+  });
 
   const title = theme ? extractTitle(theme.titleInfo) : themeId;
   const abstract = theme ? extractAbstract(theme.abstract) : '';
@@ -108,7 +109,7 @@ export default function ThemePage() {
         style={{ color: 'var(--text-muted)' }}
       >
         <ArrowLeft className="w-4 h-4" />
-        Back to FRASER
+        Back to Archives
       </Link>
 
       {/* Theme header */}
@@ -117,27 +118,18 @@ export default function ThemePage() {
           <div className="h-8 w-64 rounded animate-pulse" style={{ background: 'var(--surface)' }} />
         ) : (
           <>
-            <div className="flex items-start justify-between gap-4 flex-wrap">
-              <h1 className="text-2xl font-bold" style={{ color: 'var(--text)' }}>
-                {title}
-              </h1>
-              {fraserUrl !== '#' && (
+            <h1 className="text-2xl font-bold" style={{ color: 'var(--text)' }}>
+              {fraserUrl !== '#' ? (
                 <a
                   href={fraserUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg shrink-0"
-                  style={{
-                    background: 'var(--surface)',
-                    border: '1px solid var(--border)',
-                    color: 'var(--text-muted)',
-                  }}
+                  className="hover:underline"
                 >
-                  <ExternalLink className="w-3.5 h-3.5" />
-                  View on FRASER
+                  {title}
                 </a>
-              )}
-            </div>
+              ) : title}
+            </h1>
 
             {abstract && (
               <p className="text-sm leading-relaxed max-w-3xl" style={{ color: 'var(--text-muted)' }}>
@@ -174,10 +166,42 @@ export default function ThemePage() {
           </h2>
           {total > 0 && (
             <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-              {total.toLocaleString()} total
+              {(keywordFilter.trim() || typeFilter !== 'all') ? `${records.length} of ` : ''}{total.toLocaleString()} total
             </span>
           )}
         </div>
+
+        {/* Filters */}
+        {allRecords.length > 0 && (
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Keyword filter */}
+            <div className="relative min-w-48">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />
+              <input
+                value={keywordFilter}
+                onChange={(e) => setKeywordFilter(e.target.value)}
+                placeholder="Filter records…"
+                className="w-full pl-8 pr-3 py-1.5 text-xs rounded-lg focus:outline-none focus:ring-2"
+                style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)' }}
+              />
+            </div>
+            {/* Type chips */}
+            {(['all', 'title', 'item'] as const).map((t) => (
+              <button
+                key={t}
+                onClick={() => setTypeFilter(t)}
+                className="px-2.5 py-1 rounded-full text-xs font-medium capitalize transition-colors"
+                style={{
+                  background: typeFilter === t ? 'var(--accent)' : 'var(--surface)',
+                  color: typeFilter === t ? '#fff' : 'var(--text-muted)',
+                  border: `1px solid ${typeFilter === t ? 'var(--accent)' : 'var(--border)'}`,
+                }}
+              >
+                {t === 'all' ? 'All types' : t === 'title' ? 'Titles' : 'Items'}
+              </button>
+            ))}
+          </div>
+        )}
 
         {recordsQuery.error && (
           <div
@@ -204,7 +228,15 @@ export default function ThemePage() {
                   style={{ background: 'var(--surface-2)' }}
                 />
               ))
-            : records.map((rec, i) => <RecordRow key={i} record={rec} />)}
+            : records.length > 0
+              ? records.map((rec, i) => <RecordRow key={i} record={rec} />)
+              : (
+                <p className="px-4 py-6 text-sm text-center" style={{ color: 'var(--text-muted)' }}>
+                  {keywordFilter.trim() || typeFilter !== 'all'
+                    ? 'No records match the current filters.'
+                    : 'No records found.'}
+                </p>
+              )}
         </div>
 
         {/* Pagination */}

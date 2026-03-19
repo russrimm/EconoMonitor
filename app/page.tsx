@@ -142,13 +142,24 @@ export default function DashboardPage() {
                 {upcomingReleases.map((rd, i) => (
                   <tr
                     key={i}
+                    className="group"
                     style={{
                       borderTop: i > 0 ? '1px solid var(--border)' : undefined,
                       background: 'var(--surface)',
                     }}
                   >
-                    <td className="px-4 py-2.5" style={{ color: 'var(--text)' }}>
-                      {rd.release_name}
+                    <td className="px-4 py-2.5">
+                      <a
+                        href={`https://fred.stlouisfed.org/release?release_id=${rd.release_id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="hover:underline"
+                        style={{ color: 'var(--text)' }}
+                        onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--accent)')}
+                        onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text)')}
+                      >
+                        {rd.release_name}
+                      </a>
                     </td>
                     <td
                       className="px-4 py-2.5 text-right font-mono text-xs"

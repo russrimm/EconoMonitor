@@ -1,7 +1,8 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
-import { BookOpen, Clock, ExternalLink, Key } from 'lucide-react';
+import { BookOpen, Clock, Key, Search } from 'lucide-react';
 import { useThemes, useTimelines } from '@/hooks/useFraserQuery';
 import {
   extractTitle,
@@ -32,18 +33,7 @@ function ThemeCard({ theme }: { theme: FraserTheme }) {
         >
           {title}
         </Link>
-        {fraserUrl !== '#' && (
-          <a
-            href={fraserUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="shrink-0"
-            style={{ color: 'var(--text-muted)' }}
-            aria-label="View on FRASER"
-          >
-            <ExternalLink className="w-3.5 h-3.5" />
-          </a>
-        )}
+
       </div>
 
       {abstract && (
@@ -106,14 +96,37 @@ function TimelineCard({ timeline }: { timeline: FraserTimeline }) {
 export default function FraserPage() {
   const themes = useThemes();
   const timelines = useTimelines();
+  const [themeFilter, setThemeFilter] = useState('');
+  const [timelineFilter, setTimelineFilter] = useState('');
 
   const apiKeyMissing =
     (themes.error instanceof Error && themes.error.message.includes('not configured')) ||
     (timelines.error instanceof Error && timelines.error.message.includes('not configured'));
 
-  const themeList = themes.data?.records ?? [];
-  const timelineList = timelines.data?.records ?? [];
+  const allThemes = themes.data?.records ?? [];
+  const allTimelines = timelines.data?.records ?? [];
   const loading = themes.isLoading || timelines.isLoading;
+
+  const themeList = themeFilter.trim()
+    ? allThemes.filter((t) => {
+        const q = themeFilter.toLowerCase();
+        const title = extractTitle(t.titleInfo).toLowerCase();
+        const abstract = extractAbstract(t.abstract).toLowerCase();
+        const topics = (t.subject?.topic ?? []).map((tp) => tp.topic.toLowerCase()).join(' ');
+        return title.includes(q) || abstract.includes(q) || topics.includes(q);
+      })
+    : allThemes;
+
+  const timelineList = timelineFilter.trim()
+    ? allTimelines.filter((tl) => {
+        const q = timelineFilter.toLowerCase();
+        return (
+          tl.title.toLowerCase().includes(q) ||
+          (tl.abstract ?? '').toLowerCase().includes(q) ||
+          (tl.description ?? '').toLowerCase().includes(q)
+        );
+      })
+    : allTimelines;
 
   return (
     <div className="flex flex-col gap-8">
@@ -128,7 +141,7 @@ export default function FraserPage() {
           </div>
           <div>
             <h1 className="text-2xl font-bold" style={{ color: 'var(--text)' }}>
-              FRASER
+              Historical Archives
             </h1>
             <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
               Federal Reserve Archival System for Economic Research
@@ -203,16 +216,30 @@ export default function FraserPage() {
 
       {/* Themes */}
       <section className="flex flex-col gap-4">
-        <div className="flex items-baseline justify-between">
+        <div className="flex items-baseline justify-between gap-4 flex-wrap">
           <h2 className="text-lg font-semibold" style={{ color: 'var(--text)' }}>
             Browse Themes
           </h2>
-          {themes.data?.total ? (
+          {allThemes.length > 0 && (
             <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-              {themes.data.total} collections
+              {themeFilter.trim() ? `${themeList.length} of ${allThemes.length}` : `${allThemes.length}`} collections
             </span>
-          ) : null}
+          )}
         </div>
+
+        {/* Theme filter */}
+        {allThemes.length > 3 && (
+          <div className="relative max-w-sm">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />
+            <input
+              value={themeFilter}
+              onChange={(e) => setThemeFilter(e.target.value)}
+              placeholder="Filter themes…"
+              className="w-full pl-8 pr-3 py-1.5 text-xs rounded-lg focus:outline-none focus:ring-2"
+              style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)' }}
+            />
+          </div>
+        )}
 
         {loading ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -231,15 +258,38 @@ export default function FraserPage() {
             ))}
           </div>
         ) : !apiKeyMissing ? (
-          <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No themes found.</p>
+          <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+            {themeFilter.trim() ? `No themes match "${themeFilter}".` : 'No themes found.'}
+          </p>
         ) : null}
       </section>
 
       {/* Timelines */}
       <section className="flex flex-col gap-4">
-        <h2 className="text-lg font-semibold" style={{ color: 'var(--text)' }}>
-          Historical Timelines
-        </h2>
+        <div className="flex items-baseline justify-between gap-4 flex-wrap">
+          <h2 className="text-lg font-semibold" style={{ color: 'var(--text)' }}>
+            Historical Timelines
+          </h2>
+          {allTimelines.length > 0 && (
+            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+              {timelineFilter.trim() ? `${timelineList.length} of ${allTimelines.length}` : `${allTimelines.length}`} timelines
+            </span>
+          )}
+        </div>
+
+        {/* Timeline filter */}
+        {allTimelines.length > 3 && (
+          <div className="relative max-w-sm">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />
+            <input
+              value={timelineFilter}
+              onChange={(e) => setTimelineFilter(e.target.value)}
+              placeholder="Filter timelines…"
+              className="w-full pl-8 pr-3 py-1.5 text-xs rounded-lg focus:outline-none focus:ring-2"
+              style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)' }}
+            />
+          </div>
+        )}
 
         {loading ? (
           <div className="flex flex-col gap-3">
@@ -258,7 +308,9 @@ export default function FraserPage() {
             ))}
           </div>
         ) : !apiKeyMissing ? (
-          <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No timelines found.</p>
+          <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+            {timelineFilter.trim() ? `No timelines match "${timelineFilter}".` : 'No timelines found.'}
+          </p>
         ) : null}
       </section>
     </div>

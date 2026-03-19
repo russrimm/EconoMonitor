@@ -4,6 +4,7 @@ import {
   BookOpen,
   GitCompare,
   Globe,
+  Linkedin,
   LineChart,
   List,
   Search,
@@ -29,7 +30,7 @@ const FEATURES = [
     title: 'Series Search',
     href: '/search',
     description:
-      'Full-text search across 800 000+ FRED series. Filter by keyword and click any result to open the series detail view.',
+      'Full-text search across hundreds of thousands of economic and financial series — from unemployment and inflation to mortgage rates, trade balances, and commodity prices. Browse by topic or drill down through category hierarchies.',
   },
   {
     icon: LineChart,
@@ -50,14 +51,14 @@ const FEATURES = [
     title: 'Categories',
     href: '/categories',
     description:
-      'Browse the FRED category tree — drill from top-level themes (Money, Banking, Population…) down to individual series within any sub-category.',
+      'Browse economic data by topic — drill from top-level themes such as Money & Banking, National Accounts, Labour Markets, and International Trade down to individual series within any sub-category.',
   },
   {
     icon: Tag,
     title: 'Releases',
     href: '/releases',
     description:
-      'Calendar of the next 100 scheduled FRED data releases, sorted chronologically, with direct links to each release page on FRED.',
+      'Calendar of upcoming scheduled data releases — GDP revisions, employment reports, CPI prints, Fed meeting minutes, and more — sorted chronologically so you never miss a market-moving data point.',
   },
   {
     icon: BookOpen,
@@ -71,7 +72,7 @@ const FEATURES = [
     title: 'AI Insights',
     href: '/insights',
     description:
-      'Select any combination of FRED series and generate a structured economic analysis powered by gpt-4o, streamed live. Identifies trends, correlations, anomalies, and the current macroeconomic state.',
+      'Select any combination of economic or financial series and generate a structured analysis powered by AI, streamed live. Identifies trends, correlations, anomalies, and the current macroeconomic state — useful for research, investment analysis, and policy review.',
   },
 ];
 
@@ -113,7 +114,7 @@ const MICROSOFT_TECH = [
     logo: '✨',
     category: 'AI Inference',
     description:
-      'The AI Insights feature calls gpt-4o through the GitHub Models free inference API (endpoint: models.inference.ai.azure.com) — a GitHub product backed by Microsoft Azure. Responses stream directly to the browser.',
+      'The AI Insights feature calls a frontier language model through the GitHub Models free inference API (endpoint: models.inference.ai.azure.com) — a GitHub product backed by Microsoft Azure. Responses stream directly to the browser.',
     link: 'https://github.com/marketplace/models',
   },
   {
@@ -140,7 +141,7 @@ const DATA_SOURCES = [
     full: 'Federal Reserve Economic Data',
     org: 'Federal Reserve Bank of St. Louis',
     description:
-      '800 000+ economic time series covering GDP, employment, inflation, interest rates, trade, housing, and more — updated as frequently as daily. Free API with a registered key.',
+      'Over 800 000 economic and financial time series covering national accounts (GDP, GNI), labour markets (unemployment, wages, participation), prices (CPI, PCE, PPI), interest rates, money supply, banking, housing, trade, and international finance — updated as frequently as daily. Widely used by economists, investors, policymakers, journalists, and researchers.',
     url: 'https://fred.stlouisfed.org',
   },
   {
@@ -181,9 +182,10 @@ export default function AboutPage() {
         </div>
         <p className="text-lg max-w-2xl leading-relaxed" style={{ color: 'var(--text-muted)' }}>
           A professional-grade economic research dashboard built with modern web technology
-          and AI. Explore 800 000+ FRED time series, browse 150 years of Federal Reserve
-          archives, compare indicators side-by-side, and let gpt-4o surface insights
-          hidden in the data.
+          and AI. Explore hundreds of thousands of economic and financial time series spanning
+          GDP, employment, inflation, interest rates, housing, trade, and more — browse
+          150 years of Federal Reserve archives, compare indicators side-by-side, and let
+          let AI surface insights hidden in the data.
         </p>
         <div className="flex gap-3 flex-wrap mt-2">
           <Link
@@ -201,8 +203,72 @@ export default function AboutPage() {
             <Sparkles className="w-4 h-4" style={{ color: 'var(--accent)' }} />
             Try AI Insights
           </Link>
+          <a
+            href="https://www.linkedin.com/in/russrimm"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-1.5"
+            style={{ background: 'var(--surface-2)', color: 'var(--text)', border: '1px solid var(--border)' }}
+          >
+            <Linkedin className="w-4 h-4" style={{ color: '#0a66c2' }} />
+            Connect on LinkedIn
+          </a>
         </div>
       </div>
+
+      {/* ── Creator ──────────────────────────────────────────────────── */}
+      <section
+        className="rounded-2xl px-8 py-8 flex flex-col gap-5 sm:flex-row sm:items-start sm:gap-8"
+        style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
+      >
+        {/* Avatar placeholder */}
+        <div
+          className="w-16 h-16 rounded-full flex items-center justify-center shrink-0 text-2xl font-bold select-none"
+          style={{
+            background: 'color-mix(in srgb, var(--accent) 15%, transparent)',
+            color: 'var(--accent)',
+            border: '2px solid color-mix(in srgb, var(--accent) 30%, transparent)',
+          }}
+        >
+          RR
+        </div>
+
+        <div className="flex flex-col gap-3 flex-1">
+          <div>
+            <h2 className="text-lg font-bold" style={{ color: 'var(--text)' }}>Russ Rimmerman</h2>
+            <p className="text-sm" style={{ color: 'var(--accent)' }}>Microsoft Cloud Solution Architect · Agentic AI Enthusiast</p>
+          </div>
+
+          <p className="text-sm leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+            Russ is a Microsoft Cloud Solution Architect with a passion for building intelligent,
+            data-driven tools using agentic coding workflows. He leverages GitHub Copilot and
+            agent-mode prompting to design and ship full-stack applications end-to-end — from
+            data architecture and API integration to polished UI — in a fraction of the time
+            traditional development cycles would require.
+          </p>
+          <p className="text-sm leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+            EconoMonitor is one of several agentic creations in his portfolio: applications where
+            the developer steers the vision and an AI pair-programmer handles the implementation
+            detail. His interests span macroeconomics, cloud architecture, AI model evaluation,
+            developer tooling, and the intersection of large language models with real-world
+            economic and financial datasets.
+          </p>
+
+          <a
+            href="https://www.linkedin.com/in/russrimm"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 self-start px-4 py-2 rounded-lg text-sm font-medium transition-opacity hover:opacity-80"
+            style={{
+              background: '#0a66c2',
+              color: '#fff',
+            }}
+          >
+            <Linkedin className="w-4 h-4" />
+            linkedin.com/in/russrimm
+          </a>
+        </div>
+      </section>
 
       {/* ── Features ─────────────────────────────────────────────────── */}
       <section className="flex flex-col gap-5">

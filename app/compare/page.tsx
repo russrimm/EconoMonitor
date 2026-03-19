@@ -56,6 +56,9 @@ export default function ComparePage() {
   const metaResults = useMultiSeries(selectedIds);
   const obsResults = useMultiObservations(selectedIds, range);
 
+  // Fetch pinned series metadata so the dropdown can show friendly titles
+  const pinnedMetaResults = useMultiSeries(pinnedIds);
+
   // Build compare datasets
   const datasets: CompareDataset[] = selectedIds
     .map((id, i) => {
@@ -186,9 +189,10 @@ export default function ComparePage() {
               >
                 Pinned indicators
               </div>
-              {pinnedIds.map((id) => {
+              {pinnedIds.map((id, i) => {
                 const already = selectedIds.includes(id);
                 const full = selectedIds.length >= MAX_SERIES;
+                const pinnedTitle = pinnedMetaResults[i]?.data?.seriess?.[0]?.title;
                 return (
                   <button
                     key={id}
@@ -201,7 +205,12 @@ export default function ComparePage() {
                   >
                     <span className="min-w-0 flex items-center gap-2">
                       <Pin className="w-3.5 h-3.5 shrink-0" style={{ color: 'var(--accent)' }} />
-                      <span className="truncate">{id}</span>
+                      <span className="min-w-0">
+                        <span className="block truncate">{pinnedTitle ?? id}</span>
+                        {pinnedTitle && (
+                          <span className="block text-xs font-mono" style={{ color: 'var(--text-muted)' }}>{id}</span>
+                        )}
+                      </span>
                     </span>
                     <span
                       className="text-xs shrink-0"

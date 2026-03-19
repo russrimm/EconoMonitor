@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { ArrowLeft, Clock, ExternalLink } from 'lucide-react';
+import { ArrowLeft, Clock } from 'lucide-react';
 import { useFraserTimeline, useTimelineEvents } from '@/hooks/useFraserQuery';
 import {
   getEventTitle,
@@ -58,23 +58,18 @@ function EventCard({ event, index }: { event: FraserTimelineEvent; index: number
             </span>
           </div>
         )}
-        <div className="flex items-start justify-between gap-2">
-          <p className="text-sm font-semibold leading-snug" style={{ color: 'var(--text)' }}>
-            {title}
-          </p>
-          {fraserUrl !== '#' && (
+        <p className="text-sm font-semibold leading-snug" style={{ color: 'var(--text)' }}>
+          {fraserUrl !== '#' ? (
             <a
               href={fraserUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="shrink-0"
-              style={{ color: 'var(--text-muted)' }}
-              aria-label="View on FRASER"
+              className="hover:underline"
             >
-              <ExternalLink className="w-3.5 h-3.5" />
+              {title}
             </a>
-          )}
-        </div>
+          ) : title}
+        </p>
         {description && (
           <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
             {description}
@@ -113,7 +108,7 @@ export default function TimelinePage() {
         style={{ color: 'var(--text-muted)' }}
       >
         <ArrowLeft className="w-4 h-4" />
-        Back to FRASER
+        Back to Archives
       </Link>
 
       {/* Header */}
@@ -122,27 +117,18 @@ export default function TimelinePage() {
           <div className="h-8 w-72 rounded animate-pulse" style={{ background: 'var(--surface)' }} />
         ) : (
           <>
-            <div className="flex items-start justify-between gap-4 flex-wrap">
-              <h1 className="text-2xl font-bold" style={{ color: 'var(--text)' }}>
-                {title}
-              </h1>
-              {timeline?.url && (
+            <h1 className="text-2xl font-bold" style={{ color: 'var(--text)' }}>
+              {timeline?.url ? (
                 <a
                   href={timeline.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg shrink-0"
-                  style={{
-                    background: 'var(--surface)',
-                    border: '1px solid var(--border)',
-                    color: 'var(--text-muted)',
-                  }}
+                  className="hover:underline"
                 >
-                  <ExternalLink className="w-3.5 h-3.5" />
-                  View on FRASER
+                  {title}
                 </a>
-              )}
-            </div>
+              ) : title}
+            </h1>
             {blurb && (
               <p className="text-sm leading-relaxed max-w-3xl" style={{ color: 'var(--text-muted)' }}>
                 {blurb}

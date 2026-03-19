@@ -152,15 +152,6 @@ export function InsightsPanel({ datasets, title = 'AI Insights' }: Props) {
           <span className="text-sm font-semibold" style={{ color: 'var(--text)' }}>
             {title}
           </span>
-          <span
-            className="text-xs px-2 py-0.5 rounded-full"
-            style={{
-              background: 'color-mix(in srgb, var(--accent) 12%, transparent)',
-              color: 'var(--accent)',
-            }}
-          >
-            gpt-4o
-          </span>
         </div>
         <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
           {hasResult && !isStreaming && (

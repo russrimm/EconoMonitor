@@ -8,6 +8,7 @@ import {
   GitCompare,
   Info,
   List,
+  MessageCircle,
   Moon,
   Search,
   Sparkles,
@@ -24,8 +25,9 @@ const NAV = [
   { href: '/compare',    label: 'Compare',    icon: GitCompare },
   { href: '/categories', label: 'Categories', icon: List },
   { href: '/releases',   label: 'Releases',   icon: Tag },
-  { href: '/fraser',     label: 'FRASER',     icon: BookOpen },
+  { href: '/fraser',     label: 'Archives',   icon: BookOpen },
   { href: '/insights',   label: 'Insights',   icon: Sparkles },
+  { href: '/chat',        label: 'Chat',       icon: MessageCircle },
   { href: '/about',      label: 'About',      icon: Info },
 ];
 

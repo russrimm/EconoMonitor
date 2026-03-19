@@ -5,7 +5,6 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import {
   ArrowLeft,
-  ExternalLink,
   ChevronLeft,
   ChevronRight,
   FileText,
@@ -38,7 +37,16 @@ function ItemRow({ item }: { item: FraserRecord }) {
       <FileText className="w-4 h-4 shrink-0" style={{ color: 'var(--text-muted)' }} />
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium truncate" style={{ color: 'var(--text)' }}>
-          {title}
+          {fraserUrl !== '#' ? (
+            <a
+              href={fraserUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:underline"
+            >
+              {title}
+            </a>
+          ) : title}
         </p>
         {date && (
           <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
@@ -46,34 +54,21 @@ function ItemRow({ item }: { item: FraserRecord }) {
           </p>
         )}
       </div>
-      <div className="flex items-center gap-2 shrink-0">
-        {pdfUrl && (
-          <a
-            href={pdfUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-xs px-2 py-0.5 rounded"
-            style={{
-              background: 'color-mix(in srgb, var(--red) 12%, transparent)',
-              color: 'var(--red)',
-              border: '1px solid color-mix(in srgb, var(--red) 30%, transparent)',
-            }}
-          >
-            PDF
-          </a>
-        )}
-        {fraserUrl !== '#' && (
-          <a
-            href={fraserUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{ color: 'var(--text-muted)' }}
-            aria-label="View on FRASER"
-          >
-            <ExternalLink className="w-3.5 h-3.5" />
-          </a>
-        )}
-      </div>
+      {pdfUrl && (
+        <a
+          href={pdfUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-xs px-2 py-0.5 rounded shrink-0"
+          style={{
+            background: 'color-mix(in srgb, var(--red) 12%, transparent)',
+            color: 'var(--red)',
+            border: '1px solid color-mix(in srgb, var(--red) 30%, transparent)',
+          }}
+        >
+          PDF
+        </a>
+      )}
     </div>
   );
 }
@@ -114,7 +109,7 @@ export default function TitlePage() {
         style={{ color: 'var(--text-muted)' }}
       >
         <ArrowLeft className="w-4 h-4" />
-        Back to FRASER
+        Back to Archives
       </Link>
 
       {/* Title header */}
@@ -125,27 +120,18 @@ export default function TitlePage() {
         </div>
       ) : (
         <div className="flex flex-col gap-4">
-          <div className="flex items-start justify-between gap-4 flex-wrap">
-            <h1 className="text-2xl font-bold" style={{ color: 'var(--text)' }}>
-              {titleText}
+<h1 className="text-2xl font-bold" style={{ color: 'var(--text)' }}>
+              {fraserUrl !== '#' ? (
+                <a
+                  href={fraserUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="hover:underline"
+                >
+                  {titleText}
+                </a>
+              ) : titleText}
             </h1>
-            {fraserUrl !== '#' && (
-              <a
-                href={fraserUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg shrink-0"
-                style={{
-                  background: 'var(--surface)',
-                  border: '1px solid var(--border)',
-                  color: 'var(--text-muted)',
-                }}
-              >
-                <ExternalLink className="w-3.5 h-3.5" />
-                View on FRASER
-              </a>
-            )}
-          </div>
 
           {/* Metadata pills */}
           <div className="flex flex-wrap gap-2">

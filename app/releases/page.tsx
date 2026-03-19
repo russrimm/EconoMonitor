@@ -1,17 +1,27 @@
 'use client';
 
 import { useState } from 'react';
-import { Calendar, ExternalLink } from 'lucide-react';
+import { Calendar, Search } from 'lucide-react';
 import { useReleases } from '@/hooks/useFredQuery';
 
 export default function ReleasesPage() {
   const [offset, setOffset] = useState(0);
+  const [nameFilter, setNameFilter] = useState('');
+  const [pressOnly, setPressOnly] = useState(false);
   const { data, isLoading, error } = useReleases(offset);
 
-  const releases = data?.releases ?? [];
+  const allReleases = data?.releases ?? [];
   const total = data?.count ?? 0;
   const totalPages = Math.ceil(total / 50);
   const currentPage = Math.floor(offset / 50) + 1;
+
+  const releases = allReleases.filter((r) => {
+    const matchesName = nameFilter.trim()
+      ? r.name.toLowerCase().includes(nameFilter.toLowerCase())
+      : true;
+    const matchesPress = pressOnly ? r.press_release : true;
+    return matchesName && matchesPress;
+  });
 
   return (
     <div className="flex flex-col gap-6">
@@ -24,6 +34,55 @@ export default function ReleasesPage() {
           All FRED economic data releases
           {total > 0 && ` · ${total.toLocaleString()} total`}
         </p>
+      </div>
+
+      {/* Filters */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="relative flex-1 min-w-48 max-w-sm">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />
+          <input
+            value={nameFilter}
+            onChange={(e) => setNameFilter(e.target.value)}
+            placeholder="Filter by name…"
+            className="w-full pl-8 pr-3 py-1.5 text-sm rounded-lg focus:outline-none focus:ring-2"
+            style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)' }}
+          />
+        </div>
+        <button
+          onClick={() => setPressOnly((p) => !p)}
+          className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
+          style={{
+            background: pressOnly ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'var(--surface)',
+            color: pressOnly ? 'var(--accent)' : 'var(--text-muted)',
+            border: `1px solid ${pressOnly ? 'color-mix(in srgb, var(--accent) 35%, transparent)' : 'var(--border)'}`,
+          }}
+        >
+          <span
+            className="w-3.5 h-3.5 rounded-sm border flex items-center justify-center shrink-0 text-[10px] font-bold"
+            style={{
+              background: pressOnly ? 'var(--accent)' : 'transparent',
+              borderColor: pressOnly ? 'var(--accent)' : 'var(--border)',
+              color: '#fff',
+            }}
+          >
+            {pressOnly ? '✓' : ''}
+          </span>
+          Press releases only
+        </button>
+        {(nameFilter.trim() || pressOnly) && (
+          <button
+            onClick={() => { setNameFilter(''); setPressOnly(false); }}
+            className="text-xs px-2 py-1.5 rounded-lg"
+            style={{ color: 'var(--text-muted)', border: '1px solid var(--border)' }}
+          >
+            Clear filters
+          </button>
+        )}
+        {(nameFilter.trim() || pressOnly) && allReleases.length > 0 && (
+          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+            {releases.length} of {allReleases.length} shown
+          </span>
+        )}
       </div>
 
       {/* Error */}
@@ -65,12 +124,7 @@ export default function ReleasesPage() {
               >
                 Press Release
               </th>
-              <th
-                className="text-right px-4 py-3 font-medium text-xs uppercase tracking-wide"
-                style={{ color: 'var(--text-muted)' }}
-              >
-                Link
-              </th>
+
             </tr>
           </thead>
           <tbody>
@@ -114,9 +168,21 @@ export default function ReleasesPage() {
                           className="w-4 h-4 shrink-0"
                           style={{ color: 'var(--accent)' }}
                         />
-                        <span className="font-medium" style={{ color: 'var(--text)' }}>
-                          {release.name}
-                        </span>
+                        {release.link ? (
+                          <a
+                            href={release.link}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="font-medium hover:underline"
+                            style={{ color: 'var(--text)' }}
+                          >
+                            {release.name}
+                          </a>
+                        ) : (
+                          <span className="font-medium" style={{ color: 'var(--text)' }}>
+                            {release.name}
+                          </span>
+                        )}
                       </div>
                     </td>
                     <td
@@ -138,24 +204,7 @@ export default function ReleasesPage() {
                         <span className="text-xs">—</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-right">
-                      {release.link ? (
-                        <a
-                          href={release.link}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 text-xs"
-                          style={{ color: 'var(--accent)' }}
-                        >
-                          <ExternalLink className="w-3.5 h-3.5" />
-                          Source
-                        </a>
-                      ) : (
-                        <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                          —
-                        </span>
-                      )}
-                    </td>
+
                   </tr>
                 ))}
           </tbody>
