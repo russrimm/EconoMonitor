@@ -163,30 +163,3 @@ jobs:
         run: |
           echo "✅ EconoMonitor deployed successfully"
           echo "🌐 URL: https://${{ env.AZURE_WEBAPP_NAME }}.azurewebsites.net"
-
-        run: sleep 20
-
-      - name: Check homepage returns HTTP 200
-        run: |
-          STATUS=$(curl -o /dev/null -s -w "%{http_code}" \
-            --max-time 30 \
-            "https://${{ env.AZURE_WEBAPP_NAME }}.azurewebsites.net")
-          echo "Homepage status: $STATUS"
-          [ "$STATUS" = "200" ] || exit 1
-
-      - name: Check AI chat endpoint
-        run: |
-          STATUS=$(curl -o /dev/null -s -w "%{http_code}" \
-            --max-time 30 \
-            -X POST \
-            -H "Content-Type: application/json" \
-            -d '{"messages":[{"role":"user","content":"What is GDP?"}]}' \
-            "https://${{ env.AZURE_WEBAPP_NAME }}.azurewebsites.net/api/ai/chat")
-          echo "Chat API status: $STATUS"
-          # 200 = success, 500 = server error with AI key missing
-          [ "$STATUS" = "200" ] || [ "$STATUS" = "206" ] || exit 1
-
-      - name: Deployment summary
-        run: |
-          echo "✅ EconoMonitor deployed successfully"
-          echo "🌐 URL: https://${{ env.AZURE_WEBAPP_NAME }}.azurewebsites.net"
