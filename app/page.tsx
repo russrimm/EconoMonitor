@@ -41,10 +41,6 @@ export default function DashboardPage() {
           <h1 className="text-2xl font-bold" style={{ color: 'var(--text)' }}>
             Dashboard
           </h1>
-          <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
-            {pinned.length} pinned indicator{pinned.length !== 1 ? 's' : ''} · data
-            from the FRED® St. Louis Fed
-          </p>
         </div>
         <Link
           href="/search"

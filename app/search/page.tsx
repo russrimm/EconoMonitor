@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowUpDown, ChevronRight, Folder, LayoutGrid, Loader2, Search } from 'lucide-react';
@@ -123,7 +123,7 @@ function CategoryBrowser() {
   );
 }
 
-export default function SearchPage() {
+function SearchPageInner() {
   const searchParams = useSearchParams();
   const router = useRouter();
 
@@ -288,5 +288,13 @@ export default function SearchPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function SearchPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-center" style={{ color: 'var(--text-muted)' }}>Loading…</div>}>
+      <SearchPageInner />
+    </Suspense>
   );
 }

@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { BookOpen, Clock, Key, Search } from 'lucide-react';
+import { BookOpen, Clock, ExternalLink, Key, Search } from 'lucide-react';
 import { useThemes, useTimelines } from '@/hooks/useFraserQuery';
 import {
   extractTitle,

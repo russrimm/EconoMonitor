@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { ChevronDown, Loader2, Pin, Search, X } from 'lucide-react';
 import { useMultiObservations, useMultiSeries, useSeriesSearch } from '@/hooks/useFredQuery';
@@ -14,6 +14,14 @@ import type { AnalyzeDataset } from '@/lib/ai';
 
 const MAX_SERIES = 6;
 
+export default function ComparePage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-center" style={{ color: 'var(--text-muted)' }}>Loading…</div>}>
+      <ComparePageInner />
+    </Suspense>
+  );
+}
+
 const RANGES: { label: string; value: ObservationRange }[] = [
   { label: '1Y', value: '1y' },
   { label: '5Y', value: '5y' },
@@ -21,7 +29,7 @@ const RANGES: { label: string; value: ObservationRange }[] = [
   { label: 'Max', value: 'max' },
 ];
 
-export default function ComparePage() {
+function ComparePageInner() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
