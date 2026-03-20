@@ -18,7 +18,7 @@ export async function POST(req: NextRequest) {
 
   if (!useAzure && !githubToken) {
     return new Response(
-      'AI analysis is not configured. Add GITHUB_TOKEN to .env.local (see BUILDING.md Section 29).',
+      'AI analysis is not configured. Set GITHUB_TOKEN (or AZURE_OPENAI_ENDPOINT + AZURE_OPENAI_API_KEY) in your environment variables.',
       { status: 503 },
     );
   }

@@ -30,14 +30,24 @@ post-deployment validation.
 | npm | ≥ 10 | Bundled with Node 20 |
 | An Azure subscription | — | Free trial works fine |
 
+**Recommended VS Code extensions for minimal-effort deployment:**
+
+| Extension | Publisher | Purpose |
+|-----------|-----------|---------|
+| [Azure MCP](https://marketplace.visualstudio.com/items?itemName=ms-azuretools.vscode-azure-mcp) | Microsoft | Lets Copilot create App Registrations, federated credentials, and RBAC assignments via natural language |
+| [Microsoft Learn MCP](https://marketplace.visualstudio.com/items?itemName=ms-vscode.vscode-learn-mcp) | Microsoft | Gives Copilot access to up-to-date Azure docs for accurate step-by-step guidance |
+| [GitHub Copilot](https://marketplace.visualstudio.com/items?itemName=GitHub.copilot) | GitHub | Required to use Agent mode with the MCP servers |
+
+With these extensions installed, the entire Entra ID / OIDC setup in Section 6 can be
+completed by describing what you want to Copilot in Agent mode — no manual CLI work needed.
+
 **API Keys you will need (all free tiers):**
 
 | Variable | Where to get it |
 |----------|----------------|
 | `FRED_API_KEY` | [api.stlouisfed.org/api_key.html](https://api.stlouisfed.org/api_key.html) |
 | `FRASER_API_KEY` | [fraser.stlouisfed.org](https://fraser.stlouisfed.org) developer portal |
-| `GITHUB_TOKEN` | GitHub → Settings → Personal Access Tokens (classic, no scopes needed for Models API) |
-| `OPENAI_API_KEY` | Optional Azure OpenAI fallback; omit if using GitHub Models only |
+| `GITHUB_TOKEN_AI` | GitHub → Settings → Personal Access Tokens (classic, `read:packages` scope; stored as `GITHUB_TOKEN_AI` — see Section 6b) |
 
 Log in to Azure before running any commands below:
 
@@ -90,7 +100,7 @@ az webapp create \
   --name economonitor \
   --resource-group rg-economonitor \
   --plan asp-economonitor \
-  --runtime "NODE:20-lts"
+  --runtime "NODE:24-lts"
 ```
 
 This creates `https://economonitor.azurewebsites.net`.
@@ -217,73 +227,111 @@ az webapp deploy \
 ## 6. Automated CI/CD (GitHub Actions)
 
 The workflow at [`.github/workflows/azure-deploy.yml`](./.github/workflows/azure-deploy.yml)
-automates build and deploy on every push to `main`. It uses **OIDC (OpenID Connect)**
-to authenticate with Azure — no long-lived credential JSON is stored in GitHub.
+automates build and deploy on every push to `main`.
 
-### 6a. Create a Service Principal
+### Authentication: Microsoft Entra ID OIDC (Workload Identity Federation)
 
-```bash
-# Create the service principal with Contributor access to the resource group
-az ad sp create-for-rbac \
-  --name sp-economonitor-github \
-  --role contributor \
-  --scopes /subscriptions/<subscription-id>/resourceGroups/rg-economonitor \
-  --sdk-auth false
+The workflow authenticates to Azure using **Microsoft Entra ID OIDC** — also called
+**Workload Identity Federation**. This is a hard requirement: GitHub Actions cannot
+deploy to Azure App Service without a federated credential trust established between
+your Entra ID tenant and the GitHub repository.
+
+**No JSON credentials blob is stored in GitHub.** OIDC tokens are short-lived and
+scoped to a single job run — far safer than the older approach of storing a long-lived
+`AZURE_CREDENTIALS` secret.
+
+---
+
+### 6a. Recommended: Use GitHub Copilot with Azure MCP (Automated Setup)
+
+The easiest way to complete the Entra ID setup is to let GitHub Copilot do it for you
+using the **Azure MCP server** and **Microsoft Learn MCP server** — the same approach
+used when setting up the live deployment. These tools give Copilot the ability to create
+App Registrations, configure federated credentials, and assign RBAC roles directly
+through natural language instructions, with no manual CLI work needed.
+
+#### Install the MCP Servers
+
+In VS Code, open **Settings** (`Ctrl+,`) → search `mcp` → open `settings.json` and
+ensure you have both MCP servers configured. They are available from the
+[Azure MCP extension](https://marketplace.visualstudio.com/items?itemName=ms-azuretools.vscode-azure-mcp)
+and the
+[Microsoft Learn MCP extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode.vscode-learn-mcp).
+
+Alternatively, install both from the VS Code Extensions panel:
+- Search **"Azure MCP"** → install `ms-azuretools.vscode-azure-mcp`
+- Search **"Microsoft Learn MCP"** → install `ms-vscode.vscode-learn-mcp`
+
+#### Run the Setup via Copilot
+
+1. Open **GitHub Copilot Chat** in VS Code (sidebar icon or `Ctrl+Alt+I`)
+2. Switch to **Agent mode** (dropdown at the bottom of the chat panel)
+3. Make sure you are signed in to Azure (`az login` in a terminal, or use the Azure
+   extension sign-in)
+4. Paste the following prompt, substituting your repo name and subscription:
+
+```
+I need to set up GitHub Actions OIDC (Workload Identity Federation) so my repo
+russrimm/EconoMonitor can deploy to Azure App Service.
+
+Please:
+1. Create an Entra ID App Registration named "sp-economonitor-github"
+2. Create a service principal for it and assign it Contributor role on
+   resource group rg-economonitor in subscription <your-subscription-id>
+3. Add two federated credentials:
+   - name: github-actions-main
+     subject: repo:russrimm/EconoMonitor:ref:refs/heads/main
+   - name: github-actions-dispatch
+     subject: repo:russrimm/EconoMonitor:environment:production
+4. Tell me the appId, tenantId, and subscriptionId I need to add as GitHub secrets
 ```
 
-Note the `appId` (client ID) from the output — you will need it in 6b.
+Copilot will use the Azure MCP tools to execute each step, show you the results, and
+provide the three values you need for step 6b.
 
-> If the SP already exists, retrieve its `appId` with:
-> ```bash
-> az ad sp list --display-name "sp-economonitor-github" --query "[0].appId" -o tsv
-> ```
+> **Why this works:** The Azure MCP server has direct access to your Azure tenant via
+> your VS Code / Azure CLI session. Copilot orchestrates `az ad app create`,
+> `az ad sp create`, `az role assignment create`, and `az ad app federated-credential create`
+> calls on your behalf — the same commands listed in the manual fallback below, but
+> without requiring you to construct them yourself.
 
-### 6b. Add Federated Credentials (OIDC)
+---
 
-Federated credentials let GitHub Actions prove its identity to Azure without a password.
-Create one credential for each trigger that should be able to deploy:
+### 6b. Add GitHub Repository Secrets
 
-```bash
-# 1. Pushes to main branch
-az ad app federated-credential create \
-  --id <appId-from-6a> \
-  --parameters '{
-    "name": "github-actions-main",
-    "issuer": "https://token.actions.githubusercontent.com",
-    "subject": "repo:russrimm/EconoMonitor:ref:refs/heads/main",
-    "audiences": ["api://AzureADTokenExchange"]
-  }'
+After the Copilot/MCP setup in 6a provides the three Azure values, add all secrets to
+your GitHub repo under **Settings → Secrets and variables → Actions**:
 
-# 2. Manual workflow_dispatch (via 'production' environment)
-az ad app federated-credential create \
-  --id <appId-from-6a> \
-  --parameters '{
-    "name": "github-actions-dispatch",
-    "issuer": "https://token.actions.githubusercontent.com",
-    "subject": "repo:russrimm/EconoMonitor:environment:production",
-    "audiences": ["api://AzureADTokenExchange"]
-  }'
-```
-
-Both credentials are already created on the live service principal.
-
-### 6c. Add GitHub Repository Secrets
-
-1. Go to your repo → **Settings** → **Secrets and variables** → **Actions**
-2. Add each of the following **repository secrets**:
-
-| Secret Name | Value | How to find it |
-|-------------|-------|----------------|
-| `AZURE_CLIENT_ID` | SP app ID | `az ad sp list --display-name sp-economonitor-github --query "[0].appId" -o tsv` |
-| `AZURE_TENANT_ID` | Azure tenant ID | `az account show --query tenantId -o tsv` |
-| `AZURE_SUBSCRIPTION_ID` | Azure subscription ID | `az account show --query id -o tsv` |
+| Secret Name | Value | Source |
+|-------------|-------|--------|
+| `AZURE_CLIENT_ID` | App Registration application (client) ID | Output from Copilot in step 6a |
+| `AZURE_TENANT_ID` | Azure tenant ID | Output from Copilot in step 6a |
+| `AZURE_SUBSCRIPTION_ID` | Azure subscription ID | Output from Copilot in step 6a |
 | `FRED_API_KEY` | FRED API key | [api.stlouisfed.org](https://api.stlouisfed.org/api_key.html) |
 | `FRASER_API_KEY` | FRASER API key | [fraser.stlouisfed.org](https://fraser.stlouisfed.org) |
-| `GITHUB_TOKEN_AI` | GitHub PAT (Models API) | GitHub → Settings → Personal access tokens |
+| `GITHUB_TOKEN_AI` | GitHub PAT (for Models API) | GitHub → Settings → Personal access tokens |
 
-> `GITHUB_TOKEN_AI` is used instead of `GITHUB_TOKEN` to avoid conflicting with
-> GitHub Actions' built-in `GITHUB_TOKEN` secret. The workflow maps it to the
-> `GITHUB_TOKEN` App Setting that the app reads at runtime.
+> **Why `GITHUB_TOKEN_AI` and not `GITHUB_TOKEN`?** GitHub Actions automatically creates
+> a built-in ephemeral secret named `GITHUB_TOKEN` for every workflow run. You cannot
+> override it with a repo secret — GitHub silently ignores any repo secret with that
+> name. Store your GitHub PAT under `GITHUB_TOKEN_AI` instead; the workflow's
+> `Sync App Settings` step maps it to the `GITHUB_TOKEN` app setting that the
+> application reads at runtime.
+
+### 6c. Create the GitHub `production` Environment
+
+The deploy job declares `environment: production` in the workflow YAML. This environment
+must exist in GitHub before the first run:
+
+1. Go to your repo → **Settings** → **Environments** → **New environment**
+2. Name it exactly `production`
+3. Optionally add protection rules (e.g., required reviewers for manual deploys)
+
+This is required for two reasons:
+- The `workflow_dispatch` federated credential uses `subject: ...environment:production`;
+  the environment tag is only present in the OIDC token when the job references a named
+  GitHub environment
+- The `url:` on the environment provides a clickable deployment link in the Actions UI
 
 ### 6d. How the Workflow Runs
 
@@ -297,6 +345,54 @@ Every push to `main` (or a manual dispatch) triggers three sequential jobs:
 
 See [`.github/workflows/azure-deploy.yml`](./.github/workflows/azure-deploy.yml)
 for the full workflow definition.
+
+---
+
+### Manual Fallback: CLI Commands (if MCP is unavailable)
+
+If you prefer to run the Entra ID setup manually without Copilot, these are the
+equivalent CLI commands:
+
+```bash
+# 1. Create the service principal with Contributor on the resource group
+az ad sp create-for-rbac \
+  --name sp-economonitor-github \
+  --role contributor \
+  --scopes /subscriptions/<subscription-id>/resourceGroups/rg-economonitor \
+  --sdk-auth false
+
+# Note the appId from the output, then:
+
+# 2. Add federated credential for push-to-main
+az ad app federated-credential create \
+  --id <appId> \
+  --parameters '{
+    "name": "github-actions-main",
+    "issuer": "https://token.actions.githubusercontent.com",
+    "subject": "repo:russrimm/EconoMonitor:ref:refs/heads/main",
+    "audiences": ["api://AzureADTokenExchange"]
+  }'
+
+# 3. Add federated credential for workflow_dispatch via production environment
+az ad app federated-credential create \
+  --id <appId> \
+  --parameters '{
+    "name": "github-actions-dispatch",
+    "issuer": "https://token.actions.githubusercontent.com",
+    "subject": "repo:russrimm/EconoMonitor:environment:production",
+    "audiences": ["api://AzureADTokenExchange"]
+  }'
+
+# 4. Get the values you need for GitHub secrets
+az ad sp list --display-name "sp-economonitor-github" --query "[0].appId" -o tsv
+az account show --query tenantId -o tsv
+az account show --query id -o tsv
+```
+
+**Two federated credentials are required** (not one) because the `subject` field is an
+exact-match filter. A push to `main` and a `workflow_dispatch` through the `production`
+environment produce different subject claims. Without both, manual deploys fail with
+`AADSTS70021: No matching federated identity record found`.
 
 ---
 
@@ -529,13 +625,16 @@ az group delete \
 ## Quick Reference
 
 ```
-Resource Group : rg-economonitor  (region: westus2)
+Resource Group  : rg-economonitor  (region: westus2)
 App Service Plan: asp-economonitor  (Linux, B2)
-Web App        : economonitor
-Runtime        : NODE:20-lts
-Startup command: node server.js
-Deploy output  : standalone  (next.config.ts → output: "standalone")
-Deploy size    : ~8.6 MB zip  (vs 324 MB full .next)
-CI/CD auth     : OIDC (azure/login@v2, no stored credential blob)
-Default URL    : https://economonitor.azurewebsites.net
+Web App         : economonitor
+Runtime         : NODE:20-lts
+Startup command : node server.js
+Deploy output   : standalone  (next.config.ts → output: "standalone")
+Deploy size     : ~8.6 MB zip  (vs 324 MB full .next)
+CI/CD auth      : Microsoft Entra ID OIDC / Workload Identity Federation
+                  (azure/login@v2 — no stored JSON credential)
+GitHub env      : production  (required for workflow_dispatch federated credential)
+Federated creds : 2 — one for push-to-main, one for environment:production dispatch
+Default URL     : https://economonitor.azurewebsites.net
 ```

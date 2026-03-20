@@ -39,6 +39,8 @@ This guide walks you through **every step from scratch**, including tooling setu
 26. [Issues Encountered and How They Were Fixed](#26-issues-encountered-and-how-they-were-fixed)
 27. [Running the App](#27-running-the-app)
 28. [Project File Reference](#28-project-file-reference)
+29. [AI Economic Insights](#section-29--ai-economic-insights)
+30. [Azure App Service Deployment](#section-30--azure-app-service-deployment)
 
 ---
 
@@ -48,7 +50,7 @@ Before starting, install the following tools on your machine. All of them are fr
 
 ### Node.js (JavaScript Runtime)
 
-Next.js runs on Node.js. You need **version 18.18 or later** (version 20 LTS recommended).
+Next.js runs on Node.js. You need **version 18.18 or later** (version 24 LTS recommended).
 
 1. Go to **https://nodejs.org**
 2. Click **"LTS"** (Long-Term Support) — this is the most stable version
@@ -125,11 +127,13 @@ Search for and install each of the following:
 
 Once GitHub Copilot is installed, you can open the Chat panel by clicking the chat icon in the VS Code sidebar (or pressing `Ctrl+Alt+I` / `Cmd+Alt+I`).
 
-Copilot Chat is the AI assistant used to build this entire application. You describe what you want and Copilot writes the code.
+Github Copilot is the AI assistant used to build this entire application. You describe what you want and Github Copilot writes the code.
 
 ### Instruction Files (Custom Behavior)
 
 Instruction files tell Copilot how to behave — you can specify coding conventions, language preferences, and context about your project. They live in `.github/copilot-instructions.md` or in your VS Code user settings folder.
+
+A source of good starting instructions is available at https://github.com/github/awesome-copilot.
 
 For this project, the most important instruction files were:
 - **`azurecosmosdb.instructions.md`** — Azure Cosmos DB best practices (from the user settings)
@@ -147,15 +151,15 @@ You do not need to configure MCPs manually for this project — Copilot can fetc
 
 VS Code Copilot Chat supports different modes:
 
-- **Ask** — You ask a question, Copilot answers in the chat
-- **Edit** — Copilot directly edits files in your workspace
-- **Agent** — Copilot uses tools (file reading, terminal commands, web fetch) to reason and act step-by-step
+- **Ask** — You ask a question, Github Copilot answers in the chat
+- **Plan** — Github Copilot directly works with you to plan the creation.
+- **Agent** — Github Copilot uses tools (file reading, terminal commands, web fetch) to reason and act step-by-step
 
 > **For this project, Agent mode was used.** It can read your files, run terminal commands, check for errors, and make targeted edits — all without you needing to copy-paste code manually.
 
 ### Planning Before Coding
 
-Before writing any code, the project was planned by asking Copilot:
+Before writing any code, the project was planned by asking Github Copilot in Ask mode:
 
 > "I want to build an economic research dashboard using the FRED API. It should use Next.js with TypeScript, Tailwind CSS, Chart.js for charts, and have an API proxy backend so the API key is never exposed to the browser. Plan the full feature set and file structure before we start."
 
@@ -180,29 +184,17 @@ Every major feature was built using this workflow:
 2. **Copilot plans** — It proposes what files to create or modify
 3. **Copilot implements** — It writes the code into your files
 4. **Verify** — Run `npx tsc --noEmit` (TypeScript check) and `npm run lint` (code quality check)
-5. **Fix** — If there are errors, describe them to Copilot and it fixes them
+5. **Fix** — If there are errors, copy nd paste them to Github Copilot and it attempts to fix them
 
 ### Example Prompts Used
 
 Effective prompts used during development:
 
-- *"Build the FRED API proxy route in `app/api/fred/[...path]/route.ts`. It should inject the API key server-side, forward all query parameters, and cache responses for 5 minutes using Next.js data cache."*
-- *"Review the capabilities at https://fraser.stlouisfed.org/api-documentation and add it as a feature to the site."*
-- *"The chart is too dark — axes and grid lines are invisible. Fix them so they work in both light and dark mode."*
-
-### How to Read Errors
-
-When TypeScript reports errors, they look like:
-
-```
-app/compare/page.tsx(44,7): error TS2304: Cannot find name 'useState'.
-```
-
-Read these as: **file name** `(line, column): error code: description`. Always fix errors from top to bottom — later errors are sometimes caused by earlier ones.
-
+- *"Review the api documentation at https://fraser.stlouisfed.org/api-documentation and add all useful features as a feature to the site."*
+- *"Include both light and dark mode themes. Give it a modern style and address any accessibility issues before deployment.."*
 ---
 
-## 5. Scaffold the Next.js Project
+## 5. Scaffold the Project
 
 ### Create the Project
 
@@ -471,19 +463,19 @@ FRASER uses a different method from FRED — instead of filling out a web form, 
 2. Run the following command, replacing the email address with your own:
 
    ```
-   curl --data '{"email":"you@example.com","description":"EconoMonitor"}' https://fraser.stlouisfed.org/api/api_key
+   curl --data '{"email":"you@example.com","description":"EconoMonitor"}' https://fraser.stlouisfed.org/api-documentation/rest-api
    ```
 
    On **Windows PowerShell**, if the above fails due to quote handling, use this version instead:
 
    ```
-   curl --data '{\"email\":\"you@example.com\",\"description\":\"EconoMonitor\"}' https://fraser.stlouisfed.org/api/api_key
+   curl --data '{\"email\":\"you@example.com\",\"description\":\"EconoMonitor\"}' https://fraser.stlouisfed.org/api-documentation/rest-api
    ```
 
 3. The FRASER server responds immediately with a JSON object containing your key:
 
    ```json
-   {"api_key":"dc590ac56e0092176b6f954ea0e097ad"}
+   {"api_key":"1234abcdefg"}
    ```
 
 4. **Copy the value** after `"api_key":` (without the quotes). That is your key.
@@ -497,7 +489,8 @@ FRASER uses a different method from FRED — instead of filling out a web form, 
 Create a file called `.env.local` in the project root (`c:\repos\EconoMonitor\.env.local`). Paste both keys:
 
 ```
-# FRED API key — get one free at https://fred.stlouisfed.org/docs/api/api_key.html
+# FRED API key — get one free at https://fred.stlouisfed.org/docs/api/fred/
+Click 'Tools' → 'FRED API'
 FRED_API_KEY=your_fred_key_here
 
 # FRASER API key — request via curl:
@@ -1502,3 +1495,123 @@ EconoMonitor/
 ---
 
 *Built with Next.js 16, TypeScript 5, Tailwind CSS 4, Chart.js 4, React Query 5, and GitHub Copilot Agent mode.*
+
+---
+
+## Section 30 — Azure App Service Deployment
+
+The complete deployment reference is in [AZURE_DEPLOYMENT.md](./AZURE_DEPLOYMENT.md).
+This section captures the key implementation decisions and how the Entra ID OIDC setup
+was accomplished without manual CLI work.
+
+---
+
+### 30.1 How the Entra ID OIDC Setup Was Done (MCP-assisted)
+
+Deploying from GitHub Actions to Azure App Service requires **Microsoft Entra ID OIDC**
+(Workload Identity Federation). Normally this involves manually running several `az ad`
+CLI commands. For this project the entire setup was handled by **GitHub Copilot in Agent
+mode** using the **Azure MCP server** and **Microsoft Learn MCP server** — no manual CLI
+work was needed for the Entra configuration.
+
+**What the MCPs did automatically, in response to a single natural language prompt:**
+1. Created an Entra ID **App Registration** (`sp-economonitor-github`)
+2. Created the **service principal** and assigned it **Contributor** on `rg-economonitor`
+3. Added **two federated credentials** (one for push-to-main, one for `workflow_dispatch`
+   via the `production` environment)
+4. Returned the `appId`, `tenantId`, and `subscriptionId` needed for the GitHub secrets
+
+**How to reproduce this:**
+
+Install the Azure MCP and Microsoft Learn MCP extensions in VS Code, open Copilot Chat
+in **Agent mode**, and describe what you need:
+
+```
+I need to set up GitHub Actions OIDC (Workload Identity Federation) so my repo
+<owner>/<repo> can deploy to Azure App Service in resource group <rg-name>.
+Please create an App Registration, service principal, assign Contributor RBAC, and
+add federated credentials for push-to-main and workflow_dispatch via a 'production'
+GitHub environment. Then give me the three values I need for GitHub secrets.
+```
+
+Copilot uses the Azure MCP tools to execute each step directly in your Azure tenant
+and surfaces the output. Full step-by-step instructions are in
+AZURE_DEPLOYMENT.md Section 6a.
+
+**Why OIDC is required (and why it can't be skipped):**
+
+Azure's security model requires every actor that deploys to a resource to hold a
+verifiable Entra ID identity. GitHub Actions has no Azure identity of its own. Entra
+federated credentials bridge this by establishing a trust: "OIDC tokens issued by
+GitHub for this specific repo and trigger are trusted as service principal `<appId>`."
+When the workflow runs, GitHub provides a short-lived token; Azure exchanges it for a
+scoped access token — no stored password or credential blob is ever created.
+
+---
+
+### 30.2 Two Federated Credentials Required
+
+One common mistake is creating only a single federated credential for push-to-main.
+The workflow also supports `workflow_dispatch` (manual triggers), which routes through
+the `production` GitHub environment. GitHub sends a different `subject` claim for each
+trigger type, and Entra ID uses **exact-match** on `subject`:
+
+| Workflow trigger | Subject claim GitHub sends |
+|-----------------|---------------------------|
+| Push to `main` | `repo:russrimm/EconoMonitor:ref:refs/heads/main` |
+| Manual `workflow_dispatch` (via `production` env) | `repo:russrimm/EconoMonitor:environment:production` |
+
+Without the second credential, manual deploys fail with:
+```
+AADSTS70021: No matching federated identity record found for the presented assertion.
+```
+
+The Copilot/MCP prompt in Section 30.1 creates both credentials in a single interaction.
+
+---
+
+### 30.3 GitHub Environment: `production`
+
+The deploy job declares `environment: production` in the workflow YAML. Create this in
+your GitHub repo under **Settings → Environments → New environment** before the first
+run. It serves two purposes:
+
+1. **Federated credential matching** — the `workflow_dispatch` subject includes
+   `environment:production`. GitHub only adds this claim when the job references a
+   named environment.
+2. **Deployment URL** — the `url:` field provides a clickable live-app link in the
+   GitHub Actions summary.
+
+---
+
+### 30.4 The `GITHUB_TOKEN_AI` Naming Convention
+
+The app reads `GITHUB_TOKEN` at runtime for the GitHub Models AI API. You cannot name
+a GitHub repo secret `GITHUB_TOKEN` — GitHub automatically creates an ephemeral token
+with that name for every workflow run and silently ignores any repo secret with the
+same name.
+
+**Solution:** Store the GitHub PAT as `GITHUB_TOKEN_AI`. The workflow's `Sync App
+Settings` step maps it to the `GITHUB_TOKEN` app setting that the application reads:
+
+```yaml
+az webapp config appsettings set \
+  --settings \
+    GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN_AI }}"
+```
+
+---
+
+### 30.5 Standalone Build Output
+
+Using `output: "standalone"` in `next.config.ts` reduces the deployment artifact from
+~324 MB (full `.next` + `node_modules`) down to ~8.6 MB. Two copy steps are required
+after `npm run build` before zipping:
+
+```bash
+cp -r .next/static .next/standalone/.next/static
+cp -r public        .next/standalone/public
+```
+
+The GitHub Actions workflow handles this automatically. For manual deploys, see
+AZURE_DEPLOYMENT.md Section 5.

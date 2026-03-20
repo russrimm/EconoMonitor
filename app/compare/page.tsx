@@ -215,9 +215,6 @@ function ComparePageInner() {
                       <Pin className="w-3.5 h-3.5 shrink-0" style={{ color: 'var(--accent)' }} />
                       <span className="min-w-0">
                         <span className="block truncate">{pinnedTitle ?? id}</span>
-                        {pinnedTitle && (
-                          <span className="block text-xs font-mono" style={{ color: 'var(--text-muted)' }}>{id}</span>
-                        )}
                       </span>
                     </span>
                     <span

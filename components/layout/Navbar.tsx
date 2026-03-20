@@ -21,7 +21,6 @@ import { useTheme } from './Providers';
 
 const NAV = [
   { href: '/',           label: 'Dashboard',  icon: TrendingUp },
-  { href: '/search',     label: 'Search',     icon: Search },
   { href: '/compare',    label: 'Compare',    icon: GitCompare },
   { href: '/categories', label: 'Categories', icon: List },
   { href: '/releases',   label: 'Releases',   icon: Tag },

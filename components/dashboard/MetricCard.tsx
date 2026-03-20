@@ -59,15 +59,9 @@ export function MetricCard({ seriesId, isPinned, onToggle }: Props) {
       {/* Header */}
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <span
-            className="text-xs font-mono uppercase tracking-wide"
-            style={{ color: 'var(--text-muted)' }}
-          >
-            {seriesId}
-          </span>
           <Link
             href={`/series/${seriesId}`}
-            className="mt-0.5 block text-sm font-semibold leading-snug line-clamp-2 hover:underline"
+            className="block text-sm font-semibold leading-snug line-clamp-2 hover:underline"
             style={{ color: 'var(--text)' }}
           >
             {series.title}
@@ -110,6 +104,19 @@ export function MetricCard({ seriesId, isPinned, onToggle }: Props) {
         )}
       </div>
 
+      {/* Chart date range */}
+      {valid.length > 1 && (() => {
+        const chartStart = valid[Math.max(0, valid.length - 80)];
+        const fmt = (d: string) =>
+          new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+        return (
+          <div className="flex items-center justify-between text-xs" style={{ color: 'var(--text-muted)' }}>
+            <span>{fmt(chartStart.date)}</span>
+            <span>{latest ? fmt(latest.date) : ''}</span>
+          </div>
+        );
+      })()}
+
       {/* Footer */}
       <div
         className="flex items-center justify-between text-xs"
@@ -118,7 +125,6 @@ export function MetricCard({ seriesId, isPinned, onToggle }: Props) {
         <span>
           {series.frequency_short} · {series.units_short}
         </span>
-        {latest && <span>{latest.date}</span>}
       </div>
     </div>
   );

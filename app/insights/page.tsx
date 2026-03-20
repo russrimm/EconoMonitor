@@ -46,6 +46,7 @@ function InsightsPageInner() {
   const searchRef = useRef<HTMLInputElement>(null);
 
   const { pinned: pinnedIds, hydrated } = usePinnedSeries();
+  const pinnedMetaResults = useMultiSeries(pinnedIds);
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(searchQuery), 400);
@@ -188,9 +189,10 @@ function InsightsPageInner() {
               >
                 Pinned indicators
               </div>
-              {pinnedIds.map((id) => {
+              {pinnedIds.map((id, i) => {
                 const already = selectedIds.includes(id);
                 const full = selectedIds.length >= MAX_SERIES;
+                const pinnedTitle = pinnedMetaResults[i]?.data?.seriess?.[0]?.title;
                 return (
                   <button
                     key={id}
@@ -204,9 +206,11 @@ function InsightsPageInner() {
                     onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--surface-2)')}
                     onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                   >
-                    <span className="flex items-center gap-2">
+                    <span className="min-w-0 flex items-center gap-2">
                       <Pin className="w-3.5 h-3.5 shrink-0" style={{ color: 'var(--accent)' }} />
-                      <span>{id}</span>
+                      <span className="min-w-0">
+                        <span className="block truncate">{pinnedTitle ?? id}</span>
+                      </span>
                     </span>
                     <span
                       className="text-xs shrink-0"
