@@ -146,7 +146,7 @@ export default function DashboardPage() {
                   >
                     <td className="px-4 py-2.5">
                       <a
-                        href={`https://fred.stlouisfed.org/release?release_id=${rd.release_id}`}
+                        href={`https://fred.stlouisfed.org/release?rid=${rd.release_id}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="hover:underline"

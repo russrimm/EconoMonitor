@@ -252,15 +252,18 @@ through natural language instructions, with no manual CLI work needed.
 
 #### Install the MCP Servers
 
-In VS Code, open **Settings** (`Ctrl+,`) → search `mcp` → open `settings.json` and
-ensure you have both MCP servers configured. They are available from the
-[Azure MCP extension](https://marketplace.visualstudio.com/items?itemName=ms-azuretools.vscode-azure-mcp)
-and the
-[Microsoft Learn MCP extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode.vscode-learn-mcp).
+Both MCP servers install from the VS Code Extensions panel (`Ctrl+Shift+X`) exactly
+like any other extension — search by name and click **Install**:
 
-Alternatively, install both from the VS Code Extensions panel:
 - Search **"Azure MCP"** → install `ms-azuretools.vscode-azure-mcp`
 - Search **"Microsoft Learn MCP"** → install `ms-vscode.vscode-learn-mcp`
+
+After installing the Azure MCP, run `az login` in a VS Code terminal to authenticate.
+The MCP registers itself with Copilot Agent automatically — no additional configuration
+or `settings.json` edits required.
+
+For full MCP setup guidance including the Azure CLI prerequisite, see
+[BUILDING.md § 2 (MCP Servers)](./BUILDING.md#mcp-servers--install-these-before-you-start).
 
 #### Run the Setup via Copilot
 
@@ -495,7 +498,7 @@ az webapp config show \
   --query "linuxFxVersion"
 ```
 
-Should return `"NODE|20-lts"`.
+Should return `"NODE|24-lts"` (matching the runtime set in Section 2c).
 
 ---
 

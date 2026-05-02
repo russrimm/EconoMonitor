@@ -42,14 +42,14 @@ GITHUB_TOKEN=your_github_pat
 | Key | Where to get it |
 |-----|----------------|
 | `FRED_API_KEY` | [api.stlouisfed.org/api_key.html](https://api.stlouisfed.org/api_key.html) (free) |
-| `FRASER_API_KEY` | [fraser.stlouisfed.org](https://fraser.stlouisfed.org) developer portal (free) |
+| `FRASER_API_KEY` | [fraser.stlouisfed.org](https://fraser.stlouisfed.org) — request via `curl` command (free, see [BUILDING.md](./BUILDING.md#9-get-your-api-keys)) |
 | `GITHUB_TOKEN` | GitHub → Settings → Personal Access Tokens → Tokens (classic) — no scopes needed for Models API |
 
 ---
 
 ## Deploy to Azure App Service
 
-EconoMonitor runs on **Azure App Service** (Linux, Node 20 LTS, B2 plan).
+EconoMonitor runs on **Azure App Service** (Linux, Node 22 LTS, B2 plan).
 
 ### One-time infrastructure setup
 
@@ -68,18 +68,19 @@ az appservice plan create `
   --sku B2 `
   --is-linux
 
-# 3. Create the web app on Node 20 LTS
+# 3. Create the web app on Node 22 LTS
 az webapp create `
   --name economonitor `
   --resource-group rg-economonitor `
   --plan asp-economonitor `
-  --runtime "NODE:20-lts"
+  --runtime "NODE:22-lts"
 
 # 4. Set the startup command
+# The app uses Next.js standalone output — server.js is the entry point
 az webapp config set `
   --name economonitor `
   --resource-group rg-economonitor `
-  --startup-file "npm run start"
+  --startup-file "node server.js"
 
 # 5. Configure environment variables (replace placeholder values)
 az webapp config appsettings set `
@@ -120,24 +121,24 @@ The app will be live at **https://economonitor.azurewebsites.net** within ~60 se
 ### Automated CI/CD (GitHub Actions)
 
 Every push to `main` builds and deploys automatically via
-[`.github/workflows/azure-deploy.yml`](./.github/workflows/azure-deploy.yml).
+[`.github/workflows/azure-deploy.yml`](./.github/workflows/azure-deploy.yml)
+using **OIDC (Workload Identity Federation)** — no stored credentials.
 
-To enable it:
+Required GitHub secrets (**Settings → Secrets and variables → Actions**):
 
-1. Get the publish profile:
-   ```powershell
-   az webapp deployment list-publishing-profiles `
-     --name economonitor `
-     --resource-group rg-economonitor `
-     --xml --output tsv
-   ```
-2. In your GitHub repo go to **Settings → Secrets and variables → Actions** and add:
-   | Secret | Value |
-   |--------|-------|
-   | `AZURE_WEBAPP_PUBLISH_PROFILE` | XML output from step 1 |
-   | `FRED_API_KEY` | Your FRED API key |
-   | `FRASER_API_KEY` | Your FRASER API key |
-   | `GITHUB_TOKEN_AI` | Your GitHub PAT |
+| Secret | Value |
+|--------|-------|
+| `AZURE_CLIENT_ID` | Entra ID App Registration client ID |
+| `AZURE_TENANT_ID` | Your Azure tenant ID |
+| `AZURE_SUBSCRIPTION_ID` | Your Azure subscription ID |
+| `FRED_API_KEY` | Your FRED API key |
+| `FRASER_API_KEY` | Your FRASER API key |
+| `GITHUB_TOKEN_AI` | Your GitHub PAT (for the AI features — stored as `GITHUB_TOKEN_AI` because GitHub reserves the name `GITHUB_TOKEN`) |
+
+The easiest way to set up the OIDC trust and get the three Azure values is to use
+GitHub Copilot in Agent mode with the Azure MCP extension installed. See
+[AZURE_DEPLOYMENT.md § 6a](./AZURE_DEPLOYMENT.md#6a-recommended-use-github-copilot-with-azure-mcp-automated-setup)
+for the exact prompt.
 
 For the full guide — custom domains, TLS, Application Insights, troubleshooting — see
 [AZURE_DEPLOYMENT.md](./AZURE_DEPLOYMENT.md).

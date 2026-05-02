@@ -115,6 +115,57 @@ Search for and install each of the following:
 
 ---
 
+### MCP Servers — Install These Before You Start
+
+MCP (Model Context Protocol) servers are the single biggest upgrade you can give Copilot Agent. Without them, Copilot can only read and write files on your machine. With them, it can deploy to Azure, look up official documentation mid-task, browse the web for API specs, and execute cloud operations — all from a single chat message.
+
+> **Set these up now, alongside your extensions.** They require a sign-in or one-time configuration step. Getting that done up front means they're ready to go the moment you need them, and you won't have to stop mid-task to authenticate.
+
+#### What's the difference between an extension and an MCP?
+
+| | Extension | MCP Server |
+|---|---|---|
+| **What it does** | Adds features to the VS Code editor (autocomplete, linting, highlighting) | Gives Copilot Agent access to external systems and live data |
+| **Who uses it** | You — the developer | Copilot Agent — automatically, when relevant |
+| **Example** | ESLint highlights a code error | Azure MCP creates an App Registration in your Azure tenant |
+
+#### How to install an MCP in VS Code
+
+Most MCPs are published as VS Code extensions and install the same way:
+
+1. Open the Extensions panel (`Ctrl+Shift+X`)
+2. Search for the MCP by name
+3. Click **Install**
+4. Complete any sign-in prompt that appears
+5. The MCP registers itself with Copilot Agent automatically — no further configuration needed
+
+#### MCPs used in this project
+
+| MCP | Publisher | What it enables |
+|---|---|---|
+| **Azure MCP** | Microsoft | Creates Azure resources, App Registrations, RBAC role assignments, and App Service config — directly from Agent chat |
+| **Microsoft Learn MCP** | Microsoft | Fetches current official Microsoft documentation into Copilot's context so answers are based on the latest guidance, not training data |
+
+#### Install: Azure MCP
+
+1. Open the Extensions panel (`Ctrl+Shift+X`)
+2. Search **Azure MCP** (publisher: Microsoft) and click **Install**
+3. Open a terminal in VS Code and run `az login` — this signs the Azure CLI into your Azure account
+   - If `az` is not found, install the [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli) first, then run `az login`
+4. Restart VS Code
+
+Once signed in, Copilot Agent automatically uses the Azure MCP whenever a task involves Azure — you never have to invoke it manually.
+
+#### Install: Microsoft Learn MCP
+
+1. Open the Extensions panel (`Ctrl+Shift+X`)
+2. Search **Microsoft Learn MCP** (publisher: Microsoft) and click **Install**
+3. No sign-in required — it reads public documentation on demand
+
+> **Real-world impact:** In Section 30, a single prompt — *"Set up GitHub Actions OIDC deployment to Azure App Service"* — causes Copilot to use the Azure MCP to create cloud resources and the Microsoft Learn MCP to pull the current OIDC setup guidance. What would normally be 30 minutes of portal clicks and CLI commands completes in one chat exchange.
+
+---
+
 ## 3. Set Up GitHub Copilot and AI Features
 
 ### Sign Up for GitHub Copilot
@@ -141,11 +192,17 @@ For this project, the most important instruction files were:
 
 You do **not** need to create these for the EconoMonitor project — they were pre-existing from the VS Code setup and applied automatically.
 
-### MCP Servers (Model Context Protocol)
+### MCP Servers
 
-MCP servers are plugins that give the AI access to external data sources and tools. For this project, the relevant MCP was **web fetch** capability, which let Copilot read the FRASER API documentation directly from the web.
+If you followed Section 2, the Azure MCP and Microsoft Learn MCP are already installed and signed in. Here's when Copilot activates each one automatically during this project:
 
-You do not need to configure MCPs manually for this project — Copilot can fetch web pages when asked.
+| MCP | When Copilot uses it |
+|---|---|
+| **Azure MCP** | Section 30 — creating the App Service, App Registration, RBAC assignments, and federated credentials for GitHub Actions |
+| **Microsoft Learn MCP** | Section 30 — fetching the current OIDC/Workload Identity Federation setup docs so the implementation follows the latest Microsoft guidance |
+| **Built-in web fetch** | Section 25 — reading the FRASER API documentation at `fraser.stlouisfed.org/api-documentation` when you ask Copilot to add the FRASER feature |
+
+No prompt is needed to activate them — Copilot selects the right MCP based on what the task requires.
 
 ### Chat Modes
 
@@ -157,18 +214,25 @@ VS Code Copilot Chat supports different modes:
 
 > **For this project, Agent mode was used.** It can read your files, run terminal commands, check for errors, and make targeted edits — all without you needing to copy-paste code manually.
 
+### Beast Mode — The Custom Agent Used for This Project
+
+**Beast Mode** is a custom Copilot agent that combines a broader set of tools, skills, and reasoning strategies than the default Copilot agent. It is what was used to build EconoMonitor — it handles complex, multi-file implementations from a single high-level prompt without needing you to break the work down step by step.
+
+**To use Beast Mode:**
+1. Open the Copilot Chat panel (`Ctrl+Alt+I`)
+2. Make sure you are in **Agent mode** (the mode selector is at the bottom of the chat input box)
+3. Click the agent selector (shows the current agent name, e.g. "GitHub Copilot") and choose **Beast mode** from the list
+4. Type your high-level prompt and press Enter
+
+Beast Mode reads your existing files for context, picks the right tools and skills automatically, makes all edits, runs checks, and fixes errors — you just describe the outcome you want.
+
 ### Planning Before Coding
 
-Before writing any code, the project was planned by asking Github Copilot in Ask mode:
+Before writing any code, kick off the project by asking Copilot in Agent mode (Beast Mode):
 
-> "I want to build an economic research dashboard using the FRED API. It should use Next.js with TypeScript, Tailwind CSS, Chart.js for charts, and have an API proxy backend so the API key is never exposed to the browser. Plan the full feature set and file structure before we start."
+> "I want to build an economic research dashboard called EconoMonitor using the free FRED and FRASER APIs from the Federal Reserve Bank of St. Louis. Plan the full feature set and file structure — dashboard with live metric cards, search, series detail pages, multi-series compare chart, category browser, releases calendar, FRASER historical archive section, and AI-powered insights. Use Next.js with TypeScript, Tailwind CSS, and Chart.js. Keep all API keys on the server side so they never reach the browser."
 
-Copilot then produced a detailed plan covering:
-- All pages (Dashboard, Search, Series Detail, Compare, Categories, Releases, FRASER)
-- All components (Navbar, Charts, Cards, Export Button)
-- The proxy route pattern (Next.js Route Handlers as middleware)
-- The React Query caching approach
-- The theme system using CSS custom properties
+Copilot then produces a detailed plan covering every page, component, and architectural decision before writing a single line of code.
 
 > **Why plan first?** Planning surfaces decisions early (which charting library? how to handle auth?) so you avoid re-doing work later. Copilot keeps the plan in its context for all subsequent steps.
 
@@ -186,12 +250,59 @@ Every major feature was built using this workflow:
 4. **Verify** — Run `npx tsc --noEmit` (TypeScript check) and `npm run lint` (code quality check)
 5. **Fix** — If there are errors, copy nd paste them to Github Copilot and it attempts to fix them
 
-### Example Prompts Used
+### Sample Prompts — Full Build Sequence
 
-Effective prompts used during development:
+The following are the actual high-level prompts used to build each part of EconoMonitor. Type these into Copilot Chat in **Agent mode (Beast Mode)**. You don't need to explain *how* to build anything — Beast Mode figures that out from the project context and its built-in skills.
 
-- *"Review the api documentation at https://fraser.stlouisfed.org/api-documentation and add all useful features as a feature to the site."*
-- *"Include both light and dark mode themes. Give it a modern style and address any accessibility issues before deployment.."*
+#### Project Foundation
+
+| Step | Prompt |
+|------|--------|
+| Scaffold project | *"Create a new Next.js app called EconoMonitor for an economic research dashboard. Use TypeScript, Tailwind CSS, and ESLint with all the recommended defaults. Open it in VS Code when done."* |
+| Install packages | *"Install everything I'll need for interactive charts, smart data fetching with caching, and a clean icon set."* |
+| Theme & colors | *"Set up a modern color system with light and dark mode. Use CSS variables for the colors so switching themes is instant. Accent color should be green. Put the dark mode toggle in the navbar."* |
+| Lock down API keys | *"I have FRED and FRASER API keys that must never reach the browser. Set up server-side proxy routes so all API calls go through my Next.js backend, with the keys injected server-side."* |
+
+#### Core Pages
+
+| Step | Prompt |
+|------|--------|
+| Dashboard | *"Build the home page as a live economic dashboard showing GDP, unemployment, inflation, the Fed Funds Rate, the 10Y-2Y yield spread, and oil prices. Each metric gets a card with the current value, the change from a year ago, and a small trend chart."* |
+| Search | *"Add a search page where I can type any economic term and get matching FRED series. Results should be paginated, and the search query should be in the URL so I can share links."* |
+| Series detail | *"When I click on any series I want a full detail page — big interactive chart, metadata, 1Y/5Y/10Y/Max range selector, expandable notes, a pin/unpin button, and CSV and JSON download buttons."* |
+| Compare | *"Add a compare page where I can overlay multiple economic indicators on the same chart to spot relationships. Make the comparison shareable via URL."* |
+| Categories | *"Add a categories browser so I can explore FRED's full topic tree and drill down to find series by subject area."* |
+| Releases | *"Add a releases page listing all upcoming FRED data publication dates so I know when new numbers are coming."* |
+| Pinned series | *"Let me pin my favorite series so they always show up on my dashboard. Remember the pins between sessions using local storage."* |
+
+#### FRASER Historical Archive
+
+| Step | Prompt |
+|------|--------|
+| FRASER section | *"The Federal Reserve also has a historical document library called FRASER at fraser.stlouisfed.org. Review the API documentation at https://fraser.stlouisfed.org/api-documentation and add a full FRASER section to the site — themed collections, historical timelines, and individual publication pages."* |
+
+#### AI Features
+
+| Step | Prompt |
+|------|--------|
+| AI insights panel | *"Add an AI analysis feature. When I'm viewing a series or comparing indicators, I want an Analyze button that sends the data to an AI model and streams back a plain-English economic interpretation with key observations and context."* |
+| AI chat page | *"Add an AI chat page where I can have a conversation about the economy and ask questions about any of the FRED series data."* |
+
+#### Polish & Accessibility
+
+| Step | Prompt |
+|------|--------|
+| Visual polish | *"Review every page and make sure the design is consistent — spacing, font sizes, card shadows, and hover states should all feel cohesive. Fix any rough edges."* |
+| Accessibility | *"Audit the entire app for accessibility issues — color contrast, keyboard navigation, focus rings, ARIA labels, and screen reader support. Fix everything you find."* |
+
+#### Deployment
+
+| Step | Prompt |
+|------|--------|
+| Azure deployment | *"Set up GitHub Actions to automatically deploy this to Azure App Service whenever I push to main. Use OIDC (Workload Identity Federation) so no passwords or secrets are stored — just a trust relationship between GitHub and Azure. Create everything I need in Azure and tell me which values to put in my GitHub secrets."* |
+
+> **How these prompts work:** Beast Mode reads your existing code, picks the right implementation approach, uses Azure MCP for any Azure steps, fetches external documentation when needed, writes all the files, runs `tsc` and ESLint to verify, and fixes any errors — all from a single plain-English prompt.
+
 ---
 
 ## 5. Scaffold the Project
