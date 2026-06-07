@@ -1,9 +1,10 @@
 'use client';
 
 import Link from 'next/link';
-import { Pin, PinOff, TrendingDown, TrendingUp } from 'lucide-react';
+import { AlertTriangle, Pin, PinOff, TrendingDown, TrendingUp } from 'lucide-react';
 import { useSeries, useObservations } from '@/hooks/useFredQuery';
 import { formatValue } from '@/lib/utils';
+import { detectAnomaly, anomalyLabel, anomalyTooltip } from '@/lib/anomaly';
 import { SparklineChart } from './SparklineChart';
 
 interface Props {
@@ -34,6 +35,20 @@ export function MetricCard({ seriesId, isPinned, onToggle }: Props) {
   }
 
   const accentColor = up ? '#10b981' : '#ef4444';
+
+  // Robust anomaly detection on the most recent change vs trailing window.
+  const anomaly = valid.length > 0 ? detectAnomaly(valid) : null;
+  const showAnomalyBadge =
+    anomaly !== null &&
+    (anomaly.severity === 'mild' ||
+      anomaly.severity === 'strong' ||
+      anomaly.severity === 'extreme');
+  const anomalyColor =
+    anomaly?.severity === 'extreme'
+      ? '#dc2626' // red-600
+      : anomaly?.severity === 'strong'
+        ? '#ea580c' // orange-600
+        : '#d97706'; // amber-600
 
   if (metaLoading || obsLoading) {
     return (
@@ -78,7 +93,7 @@ export function MetricCard({ seriesId, isPinned, onToggle }: Props) {
       </div>
 
       {/* Value + change */}
-      <div className="flex items-baseline gap-2">
+      <div className="flex items-baseline gap-2 flex-wrap">
         <span className="text-2xl font-bold" style={{ color: 'var(--text)' }}>
           {latest ? formatValue(latest.value, series.units) : '—'}
         </span>
@@ -93,6 +108,20 @@ export function MetricCard({ seriesId, isPinned, onToggle }: Props) {
               <TrendingDown className="w-3 h-3" />
             )}
             {Math.abs(pct).toFixed(2)}%
+          </span>
+        )}
+        {showAnomalyBadge && anomaly && (
+          <span
+            title={anomalyTooltip(anomaly)}
+            className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded"
+            style={{
+              color: anomalyColor,
+              background: `color-mix(in srgb, ${anomalyColor} 14%, transparent)`,
+              border: `1px solid color-mix(in srgb, ${anomalyColor} 40%, transparent)`,
+            }}
+          >
+            <AlertTriangle className="w-3 h-3" />
+            {anomalyLabel(anomaly)}
           </span>
         )}
       </div>

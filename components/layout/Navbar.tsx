@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import {
   BarChart2,
   BookOpen,
+  Calculator,
   GitCompare,
   Info,
   List,
@@ -22,6 +23,7 @@ import { useTheme } from './Providers';
 const NAV = [
   { href: '/',           label: 'Dashboard',  icon: TrendingUp },
   { href: '/compare',    label: 'Compare',    icon: GitCompare },
+  { href: '/builder',    label: 'Builder',    icon: Calculator },
   { href: '/categories', label: 'Categories', icon: List },
   { href: '/releases',   label: 'Releases',   icon: Tag },
   { href: '/fraser',     label: 'Archives',   icon: BookOpen },
