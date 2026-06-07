@@ -140,22 +140,34 @@ jobs:
 
       - name: Check homepage returns HTTP 200
         run: |
-          STATUS=$(curl -o /dev/null -s -w "%{http_code}" \
-            --max-time 30 \
-            "https://${{ env.AZURE_WEBAPP_NAME }}.azurewebsites.net")
-          echo "Homepage status: $STATUS"
-          [ "$STATUS" = "200" ] || exit 1
+          for attempt in {1..10}; do
+            STATUS=$(curl -o /dev/null -s -w "%{http_code}" \
+              --max-time 30 \
+              "https://${{ env.AZURE_WEBAPP_NAME }}.azurewebsites.net" || true)
+            echo "Homepage attempt ${attempt}/10 status: $STATUS"
+            [ "$STATUS" = "200" ] && exit 0
+            sleep 15
+          done
+          echo "Homepage never returned HTTP 200"
+          exit 1
 
       - name: Check AI chat endpoint
         run: |
-          STATUS=$(curl -o /dev/null -s -w "%{http_code}" \
-            --max-time 30 \
-            -X POST \
-            -H "Content-Type: application/json" \
-            -d '{"messages":[{"role":"user","content":"What is GDP?"}]}' \
-            "https://${{ env.AZURE_WEBAPP_NAME }}.azurewebsites.net/api/ai/chat")
-          echo "Chat API status: $STATUS"
-          [ "$STATUS" = "200" ] || [ "$STATUS" = "206" ] || exit 1
+          for attempt in {1..10}; do
+            STATUS=$(curl -o /dev/null -s -w "%{http_code}" \
+              --max-time 30 \
+              -X POST \
+              -H "Content-Type: application/json" \
+              -d '{"messages":[{"role":"user","content":"What is GDP?"}]}' \
+              "https://${{ env.AZURE_WEBAPP_NAME }}.azurewebsites.net/api/ai/chat" || true)
+            echo "Chat API attempt ${attempt}/10 status: $STATUS"
+            if [ "$STATUS" = "200" ] || [ "$STATUS" = "206" ]; then
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "Chat API never returned HTTP 200/206"
+          exit 1
 
       - name: Deployment summary
         run: |
