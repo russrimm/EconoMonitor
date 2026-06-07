@@ -110,3 +110,23 @@ export function anomalyTooltip(result: AnomalyResult): string {
     `(robust z = ${result.zScore.toFixed(1)}).`
   );
 }
+
+/**
+ * Find the dates with the largest absolute period-over-period changes.
+ * Used by the causal explainer to suggest "interesting" dates to ask about.
+ */
+export function topMovers(
+  observations: FredObservation[],
+  count = 5,
+): { date: string; change: number }[] {
+  const valid = observations.filter((o) => o.value !== '.' && o.value !== '');
+  const moves: { date: string; change: number }[] = [];
+  for (let i = 1; i < valid.length; i++) {
+    const a = parseFloat(valid[i - 1].value);
+    const b = parseFloat(valid[i].value);
+    if (isNaN(a) || isNaN(b)) continue;
+    moves.push({ date: valid[i].date, change: b - a });
+  }
+  moves.sort((a, b) => Math.abs(b.change) - Math.abs(a.change));
+  return moves.slice(0, count);
+}

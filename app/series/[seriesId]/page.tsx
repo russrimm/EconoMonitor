@@ -1,12 +1,14 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import {
   ArrowLeft,
+  BookOpen,
   Calendar,
   GitCompare,
+  History,
   Info,
   Pin,
   PinOff,
@@ -18,6 +20,13 @@ import { formatDate } from '@/lib/utils';
 import { SeriesChart } from '@/components/charts/SeriesChart';
 import { ExportButton } from '@/components/ExportButton';
 import { InsightsPanel } from '@/components/ai/InsightsPanel';
+import { CausalExplainerPanel } from '@/components/ai/CausalExplainerPanel';
+import {
+  CATEGORY_COLOR,
+  EVENTS,
+  eventsInRange,
+  fraserSearchUrl,
+} from '@/lib/events';
 import type { ObservationRange } from '@/lib/fred';
 
 const RANGES: { label: string; value: ObservationRange }[] = [
@@ -31,6 +40,7 @@ export default function SeriesDetailPage() {
   const { seriesId } = useParams<{ seriesId: string }>();
   const [range, setRange] = useState<ObservationRange>('5y');
   const [showNotes, setShowNotes] = useState(false);
+  const [showEvents, setShowEvents] = useState(true);
 
   const { toggle, isPinned } = usePinnedSeries();
   const { data: seriesMeta, isLoading: metaLoading } = useSeries(seriesId);
@@ -40,6 +50,14 @@ export default function SeriesDetailPage() {
   const observations = obsData?.observations ?? [];
   const valid = observations.filter((o) => o.value !== '.' && o.value !== '');
   const pinned = series ? isPinned(seriesId) : false;
+
+  // Events that fall within the visible chart range.
+  const visibleEvents = useMemo(() => {
+    if (valid.length === 0) return [];
+    const start = valid[0].date;
+    const end = valid[valid.length - 1].date;
+    return eventsInRange(EVENTS, start, end);
+  }, [valid]);
 
   if (metaLoading) {
     return (
@@ -194,23 +212,42 @@ export default function SeriesDetailPage() {
               Date Range
             </span>
           </div>
-          <div className="flex gap-1">
-            {RANGES.map(({ label, value }) => (
+          <div className="flex items-center gap-2 flex-wrap">
+            {visibleEvents.length > 0 && (
               <button
-                key={value}
-                onClick={() => setRange(value)}
-                className="px-3 py-1 rounded-md text-sm font-medium transition-colors"
+                onClick={() => setShowEvents((p) => !p)}
+                title="Overlay historical economic events"
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors"
                 style={{
-                  background:
-                    range === value
-                      ? 'var(--accent)'
-                      : 'var(--surface-2)',
-                  color: range === value ? '#fff' : 'var(--text-muted)',
+                  background: showEvents
+                    ? 'color-mix(in srgb, var(--accent) 12%, transparent)'
+                    : 'var(--surface-2)',
+                  color: showEvents ? 'var(--accent)' : 'var(--text-muted)',
+                  border: `1px solid ${showEvents ? 'color-mix(in srgb, var(--accent) 30%, transparent)' : 'var(--border)'}`,
                 }}
               >
-                {label}
+                <History className="w-3.5 h-3.5" />
+                Events ({visibleEvents.length})
               </button>
-            ))}
+            )}
+            <div className="flex gap-1">
+              {RANGES.map(({ label, value }) => (
+                <button
+                  key={value}
+                  onClick={() => setRange(value)}
+                  className="px-3 py-1 rounded-md text-sm font-medium transition-colors"
+                  style={{
+                    background:
+                      range === value
+                        ? 'var(--accent)'
+                        : 'var(--surface-2)',
+                    color: range === value ? '#fff' : 'var(--text-muted)',
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -229,10 +266,82 @@ export default function SeriesDetailPage() {
               observations={valid}
               title={series.title}
               units={series.units_short}
+              events={showEvents ? visibleEvents : []}
             />
           )}
         </div>
       </div>
+
+      {/* Historical events list */}
+      {showEvents && visibleEvents.length > 0 && (
+        <div
+          className="rounded-xl p-4"
+          style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
+        >
+          <div className="flex items-center gap-2 mb-3">
+            <History className="w-4 h-4" style={{ color: 'var(--accent)' }} />
+            <h2 className="font-semibold text-sm" style={{ color: 'var(--text)' }}>
+              Events during this period
+            </h2>
+            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+              · click any event to search FRASER
+            </span>
+          </div>
+          <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {visibleEvents.map((e) => {
+              const color = CATEGORY_COLOR[e.category];
+              const dateLabel = e.endDate
+                ? `${formatDate(e.date)} – ${formatDate(e.endDate)}`
+                : formatDate(e.date);
+              return (
+                <li key={e.id}>
+                  <a
+                    href={fraserSearchUrl(e)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-start gap-2 p-2.5 rounded-lg transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                    style={{ border: '1px solid var(--border)' }}
+                  >
+                    <span
+                      className="mt-1 w-2 h-2 rounded-full shrink-0"
+                      style={{ background: color }}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-medium text-sm truncate" style={{ color: 'var(--text)' }}>
+                          {e.title}
+                        </span>
+                        <span
+                          className="text-[10px] uppercase tracking-wide font-semibold px-1.5 py-0.5 rounded"
+                          style={{
+                            color,
+                            background: `color-mix(in srgb, ${color} 14%, transparent)`,
+                          }}
+                        >
+                          {e.category}
+                        </span>
+                      </div>
+                      <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                        {dateLabel}
+                      </p>
+                      <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                        {e.summary}
+                      </p>
+                      <span
+                        className="inline-flex items-center gap-1 text-xs mt-1.5"
+                        style={{ color: 'var(--accent)' }}
+                      >
+                        <BookOpen className="w-3 h-3" />
+                        FRASER search
+                      </span>
+                    </div>
+                  </a>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
 
       {/* Notes */}
       {series.notes && (
@@ -263,6 +372,15 @@ export default function SeriesDetailPage() {
       )}
 
       {/* AI Insights */}
+      {valid.length > 0 && (
+        <CausalExplainerPanel
+          seriesId={series.id}
+          label={series.title}
+          units={series.units_short}
+          observations={valid}
+        />
+      )}
+
       {valid.length > 0 && (
         <InsightsPanel
           datasets={[{
