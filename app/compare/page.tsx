@@ -1,18 +1,43 @@
 'use client';
 
-import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { ChevronDown, Loader2, Pin, Search, X } from 'lucide-react';
 import { useMultiObservations, useMultiSeries, useSeriesSearch } from '@/hooks/useFredQuery';
 import { usePinnedSeries } from '@/hooks/usePinnedSeries';
 import { CompareChart, type CompareDataset } from '@/components/charts/CompareChart';
 import { ExportButton } from '@/components/ExportButton';
+import { TransformControls } from '@/components/controls/TransformControls';
+import { NormalizeControl } from '@/components/controls/NormalizeControl';
 import { InsightsPanel } from '@/components/ai/InsightsPanel';
 import { CHART_COLORS } from '@/lib/utils';
-import type { ObservationRange } from '@/lib/fred';
+import {
+  TRANSFORM_MAP,
+  transformSuffix,
+  transformedUnits,
+  type FredUnits,
+  type ObservationRange,
+} from '@/lib/fred';
+import {
+  NORMALIZE_MAP,
+  applyNormalization,
+  isSharedAxis,
+  type NormalizeMode,
+} from '@/lib/transform';
 import type { AnalyzeDataset } from '@/lib/ai';
 
 const MAX_SERIES = 6;
+
+const VALID_UNITS = new Set(Object.keys(TRANSFORM_MAP));
+const VALID_NORMS = new Set(Object.keys(NORMALIZE_MAP));
+
+/** Emphasised gridline for each normalization mode. */
+const BASELINE: Record<NormalizeMode, number | null> = {
+  none: null,
+  index100: 100,
+  pctFromStart: 0,
+  zscore: 0,
+};
 
 export default function ComparePage() {
   return (
@@ -42,6 +67,12 @@ function ComparePageInner() {
 
   const range = (searchParams.get('range') ?? '5y') as ObservationRange;
 
+  const unitsParam = searchParams.get('units') ?? 'lin';
+  const units = (VALID_UNITS.has(unitsParam) ? unitsParam : 'lin') as FredUnits;
+
+  const normParam = searchParams.get('norm') ?? 'none';
+  const normalize = (VALID_NORMS.has(normParam) ? normParam : 'none') as NormalizeMode;
+
   // Search state
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -62,12 +93,13 @@ function ComparePageInner() {
 
   // Fetch all selected series metadata + observations in parallel
   const metaResults = useMultiSeries(selectedIds);
-  const obsResults = useMultiObservations(selectedIds, range);
+  const obsResults = useMultiObservations(selectedIds, range, { units });
 
   // Fetch pinned series metadata so the dropdown can show friendly titles
   const pinnedMetaResults = useMultiSeries(pinnedIds);
 
-  // Build compare datasets
+  // Build compare datasets: FRED transform first (server-side, changes what the
+  // series measures), then normalization (client-side, changes only its scale).
   const datasets: CompareDataset[] = selectedIds
     .map((id, i) => {
       const meta = metaResults[i]?.data?.seriess?.[0];
@@ -75,25 +107,33 @@ function ComparePageInner() {
       if (!meta) return null;
       return {
         seriesId: id,
-        label: meta.title,
-        units: meta.units_short,
-        observations: obs,
+        label: `${meta.title}${transformSuffix(units)}`,
+        units: transformedUnits(meta.units_short, units),
+        observations: applyNormalization(obs, normalize),
       };
     })
     .filter(Boolean) as CompareDataset[];
 
   const isLoadingAny = obsResults.some((r) => r.isLoading);
 
+  const sharedAxisLabel = isSharedAxis(normalize)
+    ? NORMALIZE_MAP[normalize].axisLabel
+    : null;
+
   // URL manipulation helpers
-  const updateUrl = useCallback(
-    (ids: string[], newRange?: ObservationRange) => {
-      const params = new URLSearchParams();
-      if (ids.length > 0) params.set('ids', ids.join(','));
-      params.set('range', newRange ?? range);
-      router.replace(`${pathname}?${params.toString()}`, { scroll: false });
-    },
-    [pathname, range, router],
-  );
+  function updateUrl(
+    ids: string[],
+    next: { range?: ObservationRange; units?: FredUnits; normalize?: NormalizeMode } = {},
+  ) {
+    const params = new URLSearchParams();
+    if (ids.length > 0) params.set('ids', ids.join(','));
+    params.set('range', next.range ?? range);
+    const nextUnits = next.units ?? units;
+    if (nextUnits !== 'lin') params.set('units', nextUnits);
+    const nextNorm = next.normalize ?? normalize;
+    if (nextNorm !== 'none') params.set('norm', nextNorm);
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+  }
 
   function addSeries(id: string) {
     if (selectedIds.includes(id) || selectedIds.length >= MAX_SERIES) return;
@@ -106,12 +146,21 @@ function ComparePageInner() {
   }
 
   function setRange(r: ObservationRange) {
-    updateUrl(selectedIds, r);
+    updateUrl(selectedIds, { range: r });
   }
 
-  // Flatten all valid observations for multi-export
-  const allObservations = obsResults.flatMap((r) =>
-    (r.data?.observations ?? []).filter((o) => o.value !== '.'),
+  function setUnits(u: FredUnits) {
+    updateUrl(selectedIds, { units: u });
+  }
+
+  function setNormalize(n: NormalizeMode) {
+    updateUrl(selectedIds, { normalize: n });
+  }
+
+  // Flatten all valid observations for multi-export (uses the same transformed +
+  // normalized data that is on screen).
+  const allObservations = datasets.flatMap((d) =>
+    d.observations.filter((o) => o.value !== '.'),
   );
 
   return (
@@ -122,8 +171,9 @@ function ComparePageInner() {
           Compare Series
         </h1>
         <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
-          Overlay up to {MAX_SERIES} economic series on a single chart. Series with
-          different units get separate Y-axes.
+          Overlay up to {MAX_SERIES} economic series on a single chart. Apply a FRED
+          transformation to change what the series measure, or rescale them so
+          different units share one axis.
         </p>
       </div>
 
@@ -298,27 +348,32 @@ function ComparePageInner() {
 
       {/* Chart controls */}
       <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div className="flex gap-1">
-          {RANGES.map(({ label, value }) => (
-            <button
-              key={value}
-              onClick={() => setRange(value)}
-              className="px-3 py-1 rounded-md text-sm font-medium transition-colors"
-              style={{
-                background: range === value ? 'var(--accent)' : 'var(--surface)',
-                color: range === value ? '#fff' : 'var(--text-muted)',
-                border: '1px solid var(--border)',
-              }}
-            >
-              {label}
-            </button>
-          ))}
+        <div className="flex items-center gap-4 flex-wrap">
+          <div className="flex gap-1">
+            {RANGES.map(({ label, value }) => (
+              <button
+                key={value}
+                onClick={() => setRange(value)}
+                className="px-3 py-1 rounded-md text-sm font-medium transition-colors"
+                style={{
+                  background: range === value ? 'var(--accent)' : 'var(--surface)',
+                  color: range === value ? '#fff' : 'var(--text-muted)',
+                  border: '1px solid var(--border)',
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <TransformControls units={units} onUnitsChange={setUnits} />
+          <NormalizeControl mode={normalize} onChange={setNormalize} />
         </div>
 
         {datasets.length > 0 && allObservations.length > 0 && (
           <ExportButton
             seriesId={selectedIds.join('_')}
-            title={`Compare: ${selectedIds.join(', ')}`}
+            title={`Compare: ${selectedIds.join(', ')}${transformSuffix(units)}`}
             observations={allObservations}
           />
         )}
@@ -326,9 +381,14 @@ function ComparePageInner() {
 
       {/* Chart */}
       <div
-        className="rounded-xl p-4"
+        className="rounded-xl p-4 flex flex-col gap-2"
         style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
       >
+        {normalize !== 'none' && datasets.length > 0 && (
+          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+            {NORMALIZE_MAP[normalize].description}
+          </p>
+        )}
         <div className="h-96 relative">
           {isLoadingAny && selectedIds.length > 0 ? (
             <div
@@ -339,7 +399,11 @@ function ComparePageInner() {
               Loading data…
             </div>
           ) : (
-            <CompareChart datasets={datasets} />
+            <CompareChart
+              datasets={datasets}
+              sharedAxisLabel={sharedAxisLabel}
+              baseline={BASELINE[normalize]}
+            />
           )}
         </div>
       </div>
