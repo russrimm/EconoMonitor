@@ -59,6 +59,7 @@ The server bounds request size and model history, and AI responses are never cac
 
 ```bash
 npm test
+npm run check:secrets
 npm run typecheck
 npm run lint
 npm run build
@@ -139,7 +140,8 @@ The app will be live at **https://economonitor.azurewebsites.net** within ~60 se
 
 ### Automated CI/CD (GitHub Actions)
 
-Every push to `main` builds and deploys automatically via
+Pull requests run the secret check, tests, typecheck, lint, and production build.
+Every push to `main` then builds and deploys automatically via
 [`.github/workflows/azure-deploy.yml`](./.github/workflows/azure-deploy.yml)
 using **OIDC (Workload Identity Federation)** — no stored credentials.
 

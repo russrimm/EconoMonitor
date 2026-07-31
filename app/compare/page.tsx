@@ -6,6 +6,7 @@ import { ChevronDown, Loader2, Pin, Search, X } from 'lucide-react';
 import { useMultiObservations, useMultiSeries, useSeriesSearch } from '@/hooks/useFredQuery';
 import { usePinnedSeries } from '@/hooks/usePinnedSeries';
 import { CompareChart, type CompareDataset } from '@/components/charts/CompareChart';
+import { ChartDataTable } from '@/components/charts/ChartDataTable';
 import { ExportButton } from '@/components/ExportButton';
 import { TransformControls } from '@/components/controls/TransformControls';
 import { NormalizeControl } from '@/components/controls/NormalizeControl';
@@ -24,6 +25,7 @@ import {
   applyNormalization,
   isSharedAxis,
   normalizationIssue,
+  normalizedUnits,
   type NormalizeMode,
 } from '@/lib/transform';
 import type { AnalyzeDataset } from '@/lib/ai';
@@ -452,6 +454,15 @@ function ComparePageInner() {
             />
           )}
         </div>
+        {!isLoadingAny && datasets.length > 0 && (
+          <ChartDataTable
+            title="Comparison chart data"
+            datasets={datasets.map((dataset) => ({
+              ...dataset,
+              units: normalizedUnits(dataset.units, normalize),
+            }))}
+          />
+        )}
       </div>
 
       {/* AI Insights */}

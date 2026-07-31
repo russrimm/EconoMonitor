@@ -29,6 +29,7 @@ import {
   compileFormula,
   evaluateAcrossDates,
 } from '../lib/customIndicator.ts';
+import { scanText } from '../scripts/check-secrets.mjs';
 
 test('observation ranges reject unknown URL values and use UTC-safe calendar dates', () => {
   assert.equal(parseObservationRange('invalid'), '5y');
@@ -159,4 +160,15 @@ test('formula parser supports negative exponents without changing unary preceden
   const row = [{ date: '2024-01-01', values: { A: 1, B: 1, C: 1, D: 1 } }];
   assert.equal(evaluateAcrossDates(compileFormula('-2^2'), row)[0].value, -4);
   assert.equal(evaluateAcrossDates(compileFormula('2^-2'), row)[0].value, 0.25);
+});
+
+test('secret-pattern scanner reports locations without retaining matched values', () => {
+  const token = ['gh', 'p_', 'a'.repeat(36)].join('');
+  const findings = scanText(`placeholder\nTOKEN=${token}\n`);
+
+  assert.deepEqual(findings, [
+    { detector: 'GitHub personal access token', line: 2 },
+  ]);
+  assert.equal(JSON.stringify(findings).includes(token), false);
+  assert.deepEqual(scanText('GITHUB_TOKEN=<your-github-models-token>'), []);
 });

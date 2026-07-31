@@ -22,6 +22,7 @@ import { ExportButton } from '@/components/ExportButton';
 import { TransformControls } from '@/components/controls/TransformControls';
 import { InsightsPanel } from '@/components/ai/InsightsPanel';
 import { CausalExplainerPanel } from '@/components/ai/CausalExplainerPanel';
+import { ChartDataTable } from '@/components/charts/ChartDataTable';
 import {
   CATEGORY_COLOR,
   EVENTS,
@@ -384,6 +385,19 @@ export default function SeriesDetailPage() {
             />
           )}
         </div>
+        {!obsLoading && !observationsQuery.isError && valid.length > 0 && (
+          <ChartDataTable
+            title={`${displayTitle} chart data`}
+            datasets={[
+              {
+                seriesId: series.id,
+                label: displayTitle,
+                units: displayUnits,
+                observations: valid,
+              },
+            ]}
+          />
+        )}
       </div>
 
       {/* Historical events list */}
