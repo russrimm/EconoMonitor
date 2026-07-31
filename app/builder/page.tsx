@@ -1,20 +1,27 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import { useEffect, useMemo, useState } from 'react';
 import { AlertCircle, CheckCircle2, Plus, Trash2 } from 'lucide-react';
 import { useMultiObservations, useMultiSeries } from '@/hooks/useFredQuery';
 import { useCustomIndicators } from '@/hooks/useCustomIndicators';
-import { CustomIndicatorChart } from '@/components/charts/CustomIndicatorChart';
 import {
   alignByDate,
   compileFormula,
   evaluateAcrossDates,
-  FORMULA_VARS,
   newIndicatorId,
   type CompiledFormula,
   type CustomIndicator,
   type FormulaVar,
 } from '@/lib/customIndicator';
+
+const CustomIndicatorChart = dynamic(
+  () =>
+    import('@/components/charts/CustomIndicatorChart').then(
+      (module) => module.CustomIndicatorChart,
+    ),
+  { ssr: false },
+);
 
 const TEMPLATES: {
   name: string;
@@ -23,30 +30,21 @@ const TEMPLATES: {
   inputs: { var: FormulaVar; seriesId: string; label: string }[];
 }[] = [
   {
-    name: 'Real wages (YoY %)',
-    units: '%',
-    formula: '(A / B - 1) * 100',
-    inputs: [
-      { var: 'A', seriesId: 'AHETPI',   label: 'Avg hourly earnings, production workers' },
-      { var: 'B', seriesId: 'CPIAUCSL', label: 'CPI All Urban Consumers' },
-    ],
-  },
-  {
-    name: 'Misery index',
-    units: '%',
-    formula: 'A + B',
-    inputs: [
-      { var: 'A', seriesId: 'UNRATE',   label: 'Unemployment rate' },
-      { var: 'B', seriesId: 'CPIAUCSL', label: 'CPI (use a YoY % series for accuracy)' },
-    ],
-  },
-  {
     name: '10y–2y Treasury spread',
     units: 'pp',
     formula: 'A - B',
     inputs: [
       { var: 'A', seriesId: 'DGS10', label: '10-year Treasury' },
       { var: 'B', seriesId: 'DGS2',  label: '2-year Treasury' },
+    ],
+  },
+  {
+    name: 'Gender unemployment gap',
+    units: 'pp',
+    formula: 'A - B',
+    inputs: [
+      { var: 'A', seriesId: 'LNS14000001', label: 'Men, 20 years and over' },
+      { var: 'B', seriesId: 'LNS14000002', label: 'Women, 20 years and over' },
     ],
   },
 ];
@@ -272,14 +270,15 @@ export default function BuilderPage() {
         </aside>
 
         {/* Editor */}
-        <main className="flex flex-col gap-4">
+        <section className="flex flex-col gap-4" aria-label="Custom indicator editor">
           {/* Name + units */}
           <div className="grid grid-cols-1 sm:grid-cols-[1fr_140px] gap-3">
             <div>
-              <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-muted)' }}>
+              <label htmlFor="indicator-name" className="block text-xs font-medium mb-1" style={{ color: 'var(--text-muted)' }}>
                 Name
               </label>
               <input
+                id="indicator-name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="My custom indicator"
@@ -292,10 +291,11 @@ export default function BuilderPage() {
               />
             </div>
             <div>
-              <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-muted)' }}>
+              <label htmlFor="indicator-units" className="block text-xs font-medium mb-1" style={{ color: 'var(--text-muted)' }}>
                 Units (optional)
               </label>
               <input
+                id="indicator-units"
                 value={units}
                 onChange={(e) => setUnits(e.target.value)}
                 placeholder="%"
@@ -311,10 +311,11 @@ export default function BuilderPage() {
 
           {/* Formula */}
           <div>
-            <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-muted)' }}>
+            <label htmlFor="indicator-formula" className="block text-xs font-medium mb-1" style={{ color: 'var(--text-muted)' }}>
               Formula
             </label>
             <input
+              id="indicator-formula"
               value={formula}
               onChange={(e) => setFormula(e.target.value)}
               placeholder="(A - B) / B * 100"
@@ -353,6 +354,7 @@ export default function BuilderPage() {
                 return (
                   <div key={v}>
                     <label
+                      htmlFor={`indicator-series-${v}`}
                       className="block text-xs font-medium mb-1"
                       style={{ color: 'var(--text-muted)' }}
                     >
@@ -369,6 +371,7 @@ export default function BuilderPage() {
                       FRED series id
                     </label>
                     <input
+                      id={`indicator-series-${v}`}
                       value={varSeries[v]}
                       onChange={(e) =>
                         setVarSeries((prev) => ({ ...prev, [v]: e.target.value }))
@@ -473,7 +476,7 @@ export default function BuilderPage() {
               </ul>
             </div>
           )}
-        </main>
+        </section>
       </div>
     </div>
   );

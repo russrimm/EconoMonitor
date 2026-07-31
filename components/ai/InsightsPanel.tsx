@@ -1,9 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { Loader2, RotateCcw, Sparkles } from 'lucide-react';
 import { useAiAnalysis } from '@/hooks/useAiAnalysis';
 import type { AnalyzeDataset } from '@/lib/ai';
+import { AiDataNotice } from './AiDataNotice';
 
 interface Props {
   datasets: AnalyzeDataset[];
@@ -129,6 +130,7 @@ function inlineBold(text: string): React.ReactNode[] {
 export function InsightsPanel({ datasets, title = 'AI Insights' }: Props) {
   const { analyze, text, isStreaming, error, reset } = useAiAnalysis();
   const [isOpen, setIsOpen] = useState(false);
+  const contentId = useId();
   const hasResult = text.length > 0 || isStreaming || error !== null;
 
   function handleAnalyze() {
@@ -143,17 +145,22 @@ export function InsightsPanel({ datasets, title = 'AI Insights' }: Props) {
     >
       {/* Header row */}
       <div
-        className="flex items-center justify-between gap-3 px-4 py-3 cursor-pointer select-none"
+        className="flex items-center justify-between gap-3 px-4 py-3"
         style={{ borderBottom: isOpen ? '1px solid var(--border)' : 'none' }}
-        onClick={() => setIsOpen((p) => !p)}
       >
-        <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setIsOpen((open) => !open)}
+          aria-expanded={isOpen}
+          aria-controls={contentId}
+          className="flex min-w-0 flex-1 items-center gap-2 text-left"
+        >
           <Sparkles className="w-4 h-4" style={{ color: 'var(--accent)' }} />
           <span className="text-sm font-semibold" style={{ color: 'var(--text)' }}>
             {title}
           </span>
-        </div>
-        <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+        </button>
+        <div className="flex items-center gap-2">
           {hasResult && !isStreaming && (
             <button
               onClick={reset}
@@ -190,7 +197,10 @@ export function InsightsPanel({ datasets, title = 'AI Insights' }: Props) {
 
       {/* Body */}
       {isOpen && (
-        <div className="px-4 py-4">
+        <div id={contentId} className="px-4 py-4">
+          <div className="mb-4">
+            <AiDataNotice kind="data" />
+          </div>
           {/* Error banner */}
           {error && (
             <div

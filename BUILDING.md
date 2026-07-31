@@ -1111,7 +1111,7 @@ GitHub Models gives free access to gpt-4o and other frontier models with a perso
 9. Click **Generate token** and copy it immediately — it will not be shown again.
 10. Paste it into `.env.local`:
     ```
-    GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+    GITHUB_TOKEN=<your-github-models-token>
     ```
 11. Restart the dev server (`Ctrl+C` then `npm run dev`).
 

@@ -1,12 +1,13 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 import { BookOpen, HelpCircle, Loader2, Sparkles } from 'lucide-react';
 import { useAiExplain, type ExplainCandidate } from '@/hooks/useAiExplain';
 import { topMovers } from '@/lib/anomaly';
 import { CATEGORY_COLOR } from '@/lib/events';
 import type { FredObservation } from '@/lib/fred';
 import { formatDate } from '@/lib/utils';
+import { AiDataNotice } from './AiDataNotice';
 
 interface Props {
   seriesId: string;
@@ -35,7 +36,7 @@ function windowAroundDate(
 
   const half = Math.floor(maxPoints / 2);
   let start = Math.max(0, idx - half);
-  let end = Math.min(valid.length, start + maxPoints);
+  const end = Math.min(valid.length, start + maxPoints);
   start = Math.max(0, end - maxPoints);
 
   const window = valid.slice(start, end);
@@ -95,19 +96,19 @@ function renderProseWithCitations(
 export function CausalExplainerPanel({ seriesId, label, units, observations }: Props) {
   const { explain, text, candidates, isStreaming, error, reset } = useAiExplain();
   const [isOpen, setIsOpen] = useState(false);
-  const [focusDate, setFocusDate] = useState<string>('');
+  const [selectedFocusDate, setSelectedFocusDate] = useState('');
+  const contentId = useId();
+  const dateId = useId();
 
-  // Default the focus date to the single biggest absolute move on first hydration.
   const movers = useMemo(() => topMovers(observations, 5), [observations]);
-  useEffect(() => {
-    if (!focusDate && movers.length > 0) {
-      setFocusDate(movers[0].date);
-    }
-  }, [focusDate, movers]);
-
   const valid = observations.filter((o) => o.value !== '.' && o.value !== '');
   const earliest = valid[0]?.date ?? '';
   const latest = valid[valid.length - 1]?.date ?? '';
+  const selectedDateIsVisible =
+    selectedFocusDate >= earliest && selectedFocusDate <= latest;
+  const focusDate = selectedDateIsVisible
+    ? selectedFocusDate
+    : movers[0]?.date ?? '';
 
   const hasResult = text.length > 0 || isStreaming || error !== null;
 
@@ -130,21 +131,23 @@ export function CausalExplainerPanel({ seriesId, label, units, observations }: P
     >
       {/* Header row */}
       <div
-        className="flex items-center justify-between gap-3 px-4 py-3 cursor-pointer select-none"
+        className="flex items-center justify-between gap-3 px-4 py-3"
         style={{ borderBottom: isOpen ? '1px solid var(--border)' : 'none' }}
-        onClick={() => setIsOpen((p) => !p)}
       >
-        <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setIsOpen((open) => !open)}
+          aria-expanded={isOpen}
+          aria-controls={contentId}
+          className="flex min-w-0 flex-1 items-center gap-2 text-left"
+        >
           <HelpCircle className="w-4 h-4" style={{ color: 'var(--accent)' }} />
           <span className="text-sm font-semibold" style={{ color: 'var(--text)' }}>
             Why did this move?
           </span>
-        </div>
+        </button>
         <button
-          onClick={(e) => {
-            e.stopPropagation();
-            handleRun();
-          }}
+          onClick={handleRun}
           disabled={isStreaming || !focusDate}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium disabled:opacity-50"
           style={{ background: 'var(--accent)', color: '#fff' }}
@@ -164,22 +167,25 @@ export function CausalExplainerPanel({ seriesId, label, units, observations }: P
       </div>
 
       {isOpen && (
-        <div className="px-4 py-4 flex flex-col gap-4">
+        <div id={contentId} className="px-4 py-4 flex flex-col gap-4">
+          <AiDataNotice kind="data" />
           {/* Date picker + quick movers */}
           <div className="flex items-end gap-3 flex-wrap">
             <div>
               <label
+                htmlFor={dateId}
                 className="block text-xs font-medium mb-1"
                 style={{ color: 'var(--text-muted)' }}
               >
                 Focus date
               </label>
               <input
+                id={dateId}
                 type="date"
                 value={focusDate}
                 min={earliest}
                 max={latest}
-                onChange={(e) => setFocusDate(e.target.value)}
+                onChange={(e) => setSelectedFocusDate(e.target.value)}
                 className="px-3 py-1.5 text-sm rounded-lg focus:outline-none focus:ring-2"
                 style={{
                   background: 'var(--surface)',
@@ -199,7 +205,8 @@ export function CausalExplainerPanel({ seriesId, label, units, observations }: P
                     return (
                       <button
                         key={m.date}
-                        onClick={() => setFocusDate(m.date)}
+                        onClick={() => setSelectedFocusDate(m.date)}
+                        aria-pressed={active}
                         className="px-2 py-1 rounded-md text-xs font-mono transition-colors"
                         style={{
                           background: active

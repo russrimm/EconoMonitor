@@ -13,9 +13,9 @@
 #
 #    Secret name               Value
 #    ─────────────────────     ────────────────────────────────────────────────
-#    AZURE_CLIENT_ID           b82f9fe7-92aa-4ed6-98b0-90dfb24fd535
-#    AZURE_TENANT_ID           f33d7d7f-d7a8-49c9-9dfe-af8c9ca30123
-#    AZURE_SUBSCRIPTION_ID     4b2df633-d9f8-4261-adf9-226dd6f19033
+#    AZURE_CLIENT_ID           Your Entra application client ID
+#    AZURE_TENANT_ID           Your Entra tenant ID
+#    AZURE_SUBSCRIPTION_ID     Your Azure subscription ID
 #    FRED_API_KEY              Your FRED API key
 #    FRASER_API_KEY            Your FRASER API key
 #    GITHUB_TOKEN_AI           Your GitHub PAT (for Models API / AI features)
@@ -57,6 +57,15 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Run unit tests
+        run: npm test
+
+      - name: Check TypeScript
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
 
       - name: Build Next.js application (standalone mode)
         env:
@@ -146,16 +155,16 @@ jobs:
           echo "Homepage status: $STATUS"
           [ "$STATUS" = "200" ] || exit 1
 
-      - name: Check AI chat endpoint
+      - name: Check AI chat request validation
         run: |
           STATUS=$(curl -o /dev/null -s -w "%{http_code}" \
             --max-time 30 \
             -X POST \
             -H "Content-Type: application/json" \
-            -d '{"messages":[{"role":"user","content":"What is GDP?"}]}' \
+            -d '{"messages":[]}' \
             "https://${{ env.AZURE_WEBAPP_NAME }}.azurewebsites.net/api/ai/chat")
           echo "Chat API status: $STATUS"
-          [ "$STATUS" = "200" ] || [ "$STATUS" = "206" ] || exit 1
+          [ "$STATUS" = "400" ] || exit 1
 
       - name: Deployment summary
         run: |

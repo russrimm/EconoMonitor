@@ -1,11 +1,23 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
-import { AlertTriangle, Pin, PinOff, TrendingDown, TrendingUp } from 'lucide-react';
+import {
+  AlertTriangle,
+  Pin,
+  PinOff,
+  RefreshCw,
+  TrendingDown,
+  TrendingUp,
+} from 'lucide-react';
 import { useSeries, useObservations } from '@/hooks/useFredQuery';
-import { formatValue } from '@/lib/utils';
+import { formatDate, formatValue } from '@/lib/utils';
 import { detectAnomaly, anomalyLabel, anomalyTooltip } from '@/lib/anomaly';
-import { SparklineChart } from './SparklineChart';
+
+const SparklineChart = dynamic(
+  () => import('./SparklineChart').then((module) => module.SparklineChart),
+  { ssr: false },
+);
 
 interface Props {
   seriesId: string;
@@ -14,8 +26,12 @@ interface Props {
 }
 
 export function MetricCard({ seriesId, isPinned, onToggle }: Props) {
-  const { data: seriesMeta, isLoading: metaLoading } = useSeries(seriesId);
-  const { data: obsData, isLoading: obsLoading } = useObservations(seriesId, '5y');
+  const metaQuery = useSeries(seriesId);
+  const observationsQuery = useObservations(seriesId, '5y', {
+    maxObservations: 80,
+  });
+  const { data: seriesMeta, isLoading: metaLoading } = metaQuery;
+  const { data: obsData, isLoading: obsLoading } = observationsQuery;
 
   const series = seriesMeta?.seriess?.[0];
   const observations = obsData?.observations ?? [];
@@ -64,6 +80,36 @@ export function MetricCard({ seriesId, isPinned, onToggle }: Props) {
     );
   }
 
+  if (metaQuery.isError || observationsQuery.isError) {
+    return (
+      <div
+        className="rounded-xl p-4 flex min-h-44 flex-col justify-between gap-3"
+        role="alert"
+        style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
+      >
+        <div>
+          <p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>
+            {series?.title ?? seriesId}
+          </p>
+          <p className="mt-2 text-xs" style={{ color: 'var(--red)' }}>
+            This indicator could not be loaded.
+          </p>
+        </div>
+        <button
+          onClick={() => {
+            void metaQuery.refetch();
+            void observationsQuery.refetch();
+          }}
+          className="flex w-fit items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium"
+          style={{ color: 'var(--text)', border: '1px solid var(--border)' }}
+        >
+          <RefreshCw className="h-3.5 w-3.5" />
+          Retry
+        </button>
+      </div>
+    );
+  }
+
   if (!series) return null;
 
   return (
@@ -85,7 +131,8 @@ export function MetricCard({ seriesId, isPinned, onToggle }: Props) {
         <button
           onClick={() => onToggle(seriesId)}
           title={isPinned ? 'Unpin' : 'Pin to dashboard'}
-          className="shrink-0 p-1 rounded transition-colors opacity-0 group-hover:opacity-100"
+          aria-label={isPinned ? `Unpin ${series.title}` : `Pin ${series.title} to dashboard`}
+          className="shrink-0 p-1 rounded transition-colors opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:focus:opacity-100"
           style={{ color: 'var(--text-muted)' }}
         >
           {isPinned ? <PinOff className="w-4 h-4" /> : <Pin className="w-4 h-4" />}
@@ -101,6 +148,7 @@ export function MetricCard({ seriesId, isPinned, onToggle }: Props) {
           <span
             className="flex items-center gap-0.5 text-xs font-semibold"
             style={{ color: accentColor }}
+            title="Percent change from the prior observation"
           >
             {up ? (
               <TrendingUp className="w-3 h-3" />
@@ -151,9 +199,15 @@ export function MetricCard({ seriesId, isPinned, onToggle }: Props) {
         className="flex items-center justify-between text-xs"
         style={{ color: 'var(--text-muted)' }}
       >
-        <span>
-          {series.frequency_short} · {series.units_short}
-        </span>
+        <span>{latest ? `As of ${formatDate(latest.date)}` : 'No observations'}</span>
+        <a
+          href={`https://fred.stlouisfed.org/series/${encodeURIComponent(series.id)}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="hover:underline"
+        >
+          FRED
+        </a>
       </div>
     </div>
   );

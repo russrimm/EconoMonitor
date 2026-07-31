@@ -1,4 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
+import {
+  hasAcceptableQueryLength,
+  isAllowedFraserPath,
+} from '@/lib/apiProxy';
 
 const FRASER_BASE = 'https://fraser.stlouisfed.org/api';
 
@@ -16,12 +20,24 @@ export async function GET(
 
   const { path } = await params;
   const fraserPath = path.join('/');
+  if (!isAllowedFraserPath(fraserPath)) {
+    return NextResponse.json(
+      { error: 'Unsupported FRASER API path.' },
+      { status: 404, headers: { 'Cache-Control': 'no-store' } },
+    );
+  }
+  if (!hasAcceptableQueryLength(request.nextUrl.search)) {
+    return NextResponse.json(
+      { error: 'Query string is too long.' },
+      { status: 414, headers: { 'Cache-Control': 'no-store' } },
+    );
+  }
 
   const fraserUrl = new URL(`${FRASER_BASE}/${fraserPath}`);
 
   // Forward all incoming query params
   request.nextUrl.searchParams.forEach((value, key) => {
-    fraserUrl.searchParams.set(key, value);
+    if (key !== 'api_key') fraserUrl.searchParams.set(key, value);
   });
 
   // Always request JSON
@@ -34,13 +50,14 @@ export async function GET(
         'X-API-Key': apiKey, // FRASER auth is header-based, not a query param
       },
       next: { revalidate: 3600 }, // Archival content rarely changes — 1-hour cache
+      signal: request.signal,
     });
 
     if (!upstream.ok) {
-      const text = await upstream.text().catch(() => '');
+      console.error(`[FRASER proxy] upstream returned ${upstream.status}`);
       return NextResponse.json(
-        { error: `FRASER API responded with ${upstream.status}`, detail: text },
-        { status: upstream.status },
+        { error: `FRASER API responded with ${upstream.status}` },
+        { status: upstream.status, headers: { 'Cache-Control': 'no-store' } },
       );
     }
 
@@ -51,9 +68,10 @@ export async function GET(
       },
     });
   } catch (err) {
+    console.error('[FRASER proxy] fetch failed:', err);
     return NextResponse.json(
-      { error: 'Failed to reach FRASER API', detail: String(err) },
-      { status: 502 },
+      { error: 'Failed to reach FRASER API' },
+      { status: 502, headers: { 'Cache-Control': 'no-store' } },
     );
   }
 }

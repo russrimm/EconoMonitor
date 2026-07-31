@@ -77,11 +77,9 @@ function rescale(
  * Rescale a series for display. Returns observations with recomputed `value`
  * strings so charts, tooltips, exports and the AI panels all stay consistent.
  *
- * Ratio-based modes need a non-zero base. The first visible observation is
- * preferred; if it is (near) zero — which happens legitimately for spreads like
- * T10Y2Y — we fall back to the first observation with a usable magnitude. When
- * no such point exists the series is returned untouched rather than silently
- * producing infinities.
+ * Ratio-based modes require the first visible observation to be non-zero. Using
+ * a later point would make labels such as "start = 100" economically false, so
+ * an un-normalizable series returns no plotted observations instead.
  */
 export function applyNormalization(
   observations: FredObservation[],
@@ -102,11 +100,23 @@ export function applyNormalization(
     return rescale(observations, (v) => (v - mean) / sd);
   }
 
-  const base = points.find((p) => Math.abs(p.value) >= EPSILON)?.value;
-  if (base === undefined) return observations;
+  const base = points[0].value;
+  if (Math.abs(base) < EPSILON) return [];
 
   if (mode === 'index100') return rescale(observations, (v) => (v / base) * 100);
   return rescale(observations, (v) => (v / base - 1) * 100);
+}
+
+export function normalizationIssue(
+  observations: FredObservation[],
+  mode: NormalizeMode,
+): string | null {
+  if (mode !== 'index100' && mode !== 'pctFromStart') return null;
+  const first = parse(observations)[0];
+  if (!first) return 'No numeric observations are available in this range.';
+  return Math.abs(first.value) < EPSILON
+    ? `The first visible value on ${first.obs.date} is zero, so start-based normalization is undefined.`
+    : null;
 }
 
 /** True when the mode forces every series onto one shared Y-axis. */

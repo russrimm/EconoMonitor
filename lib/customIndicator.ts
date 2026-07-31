@@ -141,6 +141,12 @@ function toRpn(tokens: Token[]): Token[] {
       stack.push(t);
     } else if (t.kind === 'op') {
       const o1 = OPS[t.op];
+      // Prefix unary operators belong to the upcoming operand. In particular,
+      // `2^-2` must not pop `^`, while `-2^2` must still evaluate as `-(2^2)`.
+      if (t.op === 'u-' || t.op === 'u+') {
+        stack.push(t);
+        continue;
+      }
       while (stack.length) {
         const top = stack[stack.length - 1];
         if (top.kind === 'op') {

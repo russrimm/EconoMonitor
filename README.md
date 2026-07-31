@@ -1,6 +1,6 @@
 # EconoMonitor
 
-A real-time US economic dashboard powered by the FRED and FRASER APIs, with AI-driven
+A US economic dashboard powered by the FRED and FRASER APIs, with AI-driven
 insights and an interactive chat interface.
 
 **Features**
@@ -13,6 +13,10 @@ insights and an interactive chat interface.
 - AI Insights panel and streaming chat for natural-language economic Q&A
 - Release calendar for upcoming FRED data publications
 - Latest financial news headlines from the free GDELT DOC API and Federal Reserve RSS
+
+FRED responses are cached for five minutes, FRASER responses for one hour, and news
+responses for fifteen minutes. Observation dates and source links are shown in the UI;
+data is current to each source's latest published release rather than tick-by-tick real time.
 
 **Tech stack:** Next.js 16 · React 19 · TypeScript · Tailwind CSS v4 · TanStack Query v5 · Chart.js · Azure App Service
 
@@ -46,6 +50,19 @@ GITHUB_TOKEN=your_github_pat
 | `FRED_API_KEY` | [api.stlouisfed.org/api_key.html](https://api.stlouisfed.org/api_key.html) (free) |
 | `FRASER_API_KEY` | [fraser.stlouisfed.org](https://fraser.stlouisfed.org) — request via `curl` command (free, see [BUILDING.md](./BUILDING.md#9-get-your-api-keys)) |
 | `GITHUB_TOKEN` | GitHub → Settings → Personal Access Tokens → Tokens (classic) — no scopes needed for Models API |
+
+AI features send the selected FRED series values or chat text to the configured GitHub
+Models or Azure OpenAI provider. Do not enter personal, confidential, or regulated data.
+The server bounds request size and model history, and AI responses are never cached.
+
+### Quality checks
+
+```bash
+npm test
+npm run typecheck
+npm run lint
+npm run build
+```
 
 ---
 

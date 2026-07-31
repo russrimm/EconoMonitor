@@ -11,8 +11,8 @@
   --border:       #e2e8f0;
   --text:         #0f172a;
   --text-muted:   #64748b;
-  --accent:       #10b981;
-  --accent-hover: #059669;
+  --accent:       #047857;
+  --accent-hover: #065f46;
   --red:          #ef4444;
   --blue:         #3b82f6;
 }
@@ -59,4 +59,3 @@ body {
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-

@@ -1,6 +1,12 @@
 'use client';
 
-import { Suspense, useCallback, useEffect, useState } from 'react';
+import {
+  Suspense,
+  useCallback,
+  useEffect,
+  useEffectEvent,
+  useState,
+} from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowUpDown, ChevronRight, Folder, LayoutGrid, Loader2, Search } from 'lucide-react';
@@ -15,7 +21,7 @@ type CategoryCrumb = { id: number; name: string };
 function CategoryBrowser() {
   const [path, setPath] = useState<CategoryCrumb[]>([]);
   const currentId = path.at(-1)?.id ?? 0;
-  const { data, isLoading } = useCategoryChildren(currentId);
+  const { data, isLoading, isError, refetch } = useCategoryChildren(currentId);
   const categories = data?.categories ?? [];
   const isLeaf = !isLoading && path.length > 0 && categories.length === 0;
 
@@ -81,6 +87,23 @@ function CategoryBrowser() {
         </div>
       )}
 
+      {isError && (
+        <div
+          className="flex items-center justify-between gap-3 rounded-xl px-4 py-3 text-sm"
+          role="alert"
+          style={{
+            color: 'var(--red)',
+            background: 'color-mix(in srgb, var(--red) 10%, transparent)',
+            border: '1px solid color-mix(in srgb, var(--red) 30%, transparent)',
+          }}
+        >
+          <span>Topics could not be loaded.</span>
+          <button onClick={() => void refetch()} className="font-medium underline">
+            Retry
+          </button>
+        </div>
+      )}
+
       {/* Leaf node — navigate to category series page */}
       {isLeaf && (
         <Link
@@ -127,40 +150,66 @@ function SearchPageInner() {
   const searchParams = useSearchParams();
   const router = useRouter();
 
-  const [query, setQuery] = useState(searchParams.get('q') ?? '');
-  const [debouncedQuery, setDebouncedQuery] = useState(searchParams.get('q') ?? '');
-  const [offset, setOffset] = useState(0);
-  const [orderBy, setOrderBy] = useState<'popularity' | 'last_updated' | 'title'>('popularity');
+  const urlQuery = searchParams.get('q') ?? '';
+  const urlPage = Math.max(1, Number.parseInt(searchParams.get('page') ?? '1', 10) || 1);
+  const sortParam = searchParams.get('sort');
+  const urlOrder =
+    sortParam === 'last_updated' || sortParam === 'title' ? sortParam : 'popularity';
+
+  const [query, setQuery] = useState(urlQuery);
+  const [debouncedQuery, setDebouncedQuery] = useState(urlQuery);
+  const orderBy = urlOrder;
+  const offset =
+    debouncedQuery === urlQuery ? (urlPage - 1) * PAGE_SIZE : 0;
 
   const { toggle, isPinned } = usePinnedSeries();
   const { data, isLoading, isFetching, error } = useSeriesSearch(debouncedQuery, offset, orderBy);
 
+  const replaceSearchUrl = useCallback(
+    (
+      nextQuery: string,
+      nextPage: number,
+      nextOrder: 'popularity' | 'last_updated' | 'title',
+    ) => {
+      const params = new URLSearchParams();
+      if (nextQuery) params.set('q', nextQuery);
+      if (nextPage > 1) params.set('page', String(nextPage));
+      if (nextOrder !== 'popularity') params.set('sort', nextOrder);
+      const queryString = params.toString();
+      router.replace(queryString ? `/search?${queryString}` : '/search', {
+        scroll: false,
+      });
+    },
+    [router],
+  );
+
   // Debounce search input
   useEffect(() => {
+    if (query === debouncedQuery) return;
     const t = setTimeout(() => {
       setDebouncedQuery(query);
-      setOffset(0);
+      replaceSearchUrl(query, 1, orderBy);
     }, 400);
     return () => clearTimeout(t);
-  }, [query]);
+  }, [debouncedQuery, orderBy, query, replaceSearchUrl]);
 
-  // Sync URL
+  const syncQueryFromUrl = useEffectEvent((nextUrlQuery: string) => {
+    if (nextUrlQuery === debouncedQuery) return;
+    setQuery(nextUrlQuery);
+    setDebouncedQuery(nextUrlQuery);
+  });
+
   useEffect(() => {
-    if (debouncedQuery) {
-      router.replace(`/search?q=${encodeURIComponent(debouncedQuery)}`, { scroll: false });
-    }
-  }, [debouncedQuery, router]);
+    syncQueryFromUrl(urlQuery);
+  }, [urlQuery]);
 
   const totalPages = data ? Math.ceil(data.count / PAGE_SIZE) : 0;
   const currentPage = Math.floor(offset / PAGE_SIZE) + 1;
 
-  const goTo = useCallback(
-    (page: number) => {
-      setOffset((page - 1) * PAGE_SIZE);
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    },
-    [],
-  );
+  function goTo(page: number) {
+    replaceSearchUrl(debouncedQuery, page, orderBy);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -180,6 +229,7 @@ function SearchPageInner() {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search by keyword, series ID, or topic…"
+              aria-label="Search FRED series"
               className="w-full pl-10 pr-4 py-2.5 text-sm rounded-xl focus:outline-none focus:ring-2"
               style={{
                 background: 'var(--surface)',
@@ -202,8 +252,11 @@ function SearchPageInner() {
                 aria-label="Sort results by"
                 value={orderBy}
                 onChange={(e) => {
-                  setOrderBy(e.target.value as typeof orderBy);
-                  setOffset(0);
+                  replaceSearchUrl(
+                    debouncedQuery,
+                    1,
+                    e.target.value as typeof orderBy,
+                  );
                 }}
                 className="text-sm rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 appearance-none cursor-pointer pr-6"
                 style={{

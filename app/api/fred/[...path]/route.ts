@@ -1,4 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
+import {
+  hasAcceptableQueryLength,
+  isAllowedFredPath,
+} from '@/lib/apiProxy';
 
 const FRED_BASE = 'https://api.stlouisfed.org/fred';
 
@@ -16,6 +20,18 @@ export async function GET(
 
   const { path } = await params;
   const fredPath = path.join('/');
+  if (!isAllowedFredPath(fredPath)) {
+    return NextResponse.json(
+      { error: 'Unsupported FRED API path.' },
+      { status: 404, headers: { 'Cache-Control': 'no-store' } },
+    );
+  }
+  if (!hasAcceptableQueryLength(request.nextUrl.search)) {
+    return NextResponse.json(
+      { error: 'Query string is too long.' },
+      { status: 414, headers: { 'Cache-Control': 'no-store' } },
+    );
+  }
 
   // Build upstream FRED URL
   const fredUrl = new URL(`${FRED_BASE}/${fredPath}`);
@@ -35,13 +51,14 @@ export async function GET(
     const upstream = await fetch(fredUrl.toString(), {
       headers: { Accept: 'application/json' },
       next: { revalidate: 300 }, // Next.js data-cache: 5 minutes
+      signal: request.signal,
     });
 
     if (!upstream.ok) {
-      const body = await upstream.text();
+      console.error(`[FRED proxy] upstream returned ${upstream.status}`);
       return NextResponse.json(
-        { error: `FRED API returned ${upstream.status}`, detail: body },
-        { status: upstream.status },
+        { error: `FRED API returned ${upstream.status}` },
+        { status: upstream.status, headers: { 'Cache-Control': 'no-store' } },
       );
     }
 
@@ -55,7 +72,7 @@ export async function GET(
     console.error('[FRED proxy] fetch failed:', err);
     return NextResponse.json(
       { error: 'Failed to contact the FRED API. Try again later.' },
-      { status: 502 },
+      { status: 502, headers: { 'Cache-Control': 'no-store' } },
     );
   }
 }

@@ -41,6 +41,7 @@ export default function ReleasesPage() {
         <div className="relative flex-1 min-w-48 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />
           <input
+            aria-label="Filter releases by name"
             value={nameFilter}
             onChange={(e) => setNameFilter(e.target.value)}
             placeholder="Filter by name…"
@@ -50,6 +51,7 @@ export default function ReleasesPage() {
         </div>
         <button
           onClick={() => setPressOnly((p) => !p)}
+          aria-pressed={pressOnly}
           className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
           style={{
             background: pressOnly ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'var(--surface)',
@@ -144,7 +146,6 @@ export default function ReleasesPage() {
                       />
                     </td>
                     <td className="px-4 py-3 hidden sm:table-cell" />
-                    <td className="px-4 py-3" />
                   </tr>
                 ))
               : releases.map((release, i) => (

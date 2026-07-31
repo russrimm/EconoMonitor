@@ -1,12 +1,20 @@
 import { NextRequest } from 'next/server';
 import OpenAI from 'openai';
 import { buildSystemPrompt, buildUserPrompt } from '@/lib/ai';
-import type { AnalyzeDataset } from '@/lib/ai';
+import { validateAnalyzeDatasets } from '@/lib/aiValidation';
+import { readLimitedJson, RequestBodyError } from '@/lib/http';
 
 export const runtime = 'nodejs';
 
-// Allowlist pattern for series IDs — prevents injection via the seriesId field
-const SERIES_ID_RE = /^[A-Z0-9_\-]{1,30}$/;
+const MAX_BODY_BYTES = 256 * 1024;
+const RESPONSE_HEADERS = {
+  'Cache-Control': 'no-store',
+  'X-Content-Type-Options': 'nosniff',
+};
+
+function textResponse(message: string, status: number) {
+  return new Response(message, { status, headers: RESPONSE_HEADERS });
+}
 
 export async function POST(req: NextRequest) {
   const githubToken = process.env.GITHUB_TOKEN;
@@ -17,37 +25,25 @@ export async function POST(req: NextRequest) {
   const useAzure = Boolean(azureEndpoint && azureKey);
 
   if (!useAzure && !githubToken) {
-    return new Response(
+    return textResponse(
       'AI analysis is not configured. Set GITHUB_TOKEN (or AZURE_OPENAI_ENDPOINT + AZURE_OPENAI_API_KEY) in your environment variables.',
-      { status: 503 },
+      503,
     );
   }
 
   let body: unknown;
   try {
-    body = await req.json();
-  } catch {
-    return new Response('Invalid JSON body.', { status: 400 });
-  }
-
-  if (!body || typeof body !== 'object' || !Array.isArray((body as Record<string, unknown>).datasets)) {
-    return new Response('Body must be { datasets: AnalyzeDataset[] }.', { status: 400 });
-  }
-
-  const datasets = (body as { datasets: unknown[] }).datasets as AnalyzeDataset[];
-
-  if (datasets.length === 0 || datasets.length > 6) {
-    return new Response('Provide between 1 and 6 datasets.', { status: 400 });
-  }
-
-  for (const ds of datasets) {
-    if (typeof ds.seriesId !== 'string' || !SERIES_ID_RE.test(ds.seriesId)) {
-      return new Response(
-        'Each dataset must have a valid seriesId (uppercase letters, digits, underscores, hyphens; max 30 chars).',
-        { status: 400 },
-      );
+    body = await readLimitedJson(req, MAX_BODY_BYTES);
+  } catch (error) {
+    if (error instanceof RequestBodyError) {
+      return textResponse(error.message, error.status);
     }
+    throw error;
   }
+
+  const validation = validateAnalyzeDatasets(body);
+  if (!validation.ok) return textResponse(validation.error, 400);
+  const datasets = validation.value;
 
   const client = useAzure
     ? new OpenAI({
@@ -63,16 +59,33 @@ export async function POST(req: NextRequest) {
 
   const model = useAzure ? azureDeployment : 'gpt-4o';
 
-  const stream = await client.chat.completions.create({
-    model,
-    stream: true,
-    temperature: 0.3,
-    max_tokens: 2048,
-    messages: [
-      { role: 'system', content: buildSystemPrompt() },
-      { role: 'user', content: buildUserPrompt(datasets) },
-    ],
-  });
+  const createStream = () =>
+    client.chat.completions.create(
+      {
+        model,
+        stream: true,
+        temperature: 0.3,
+        max_tokens: 2048,
+        messages: [
+          { role: 'system' as const, content: buildSystemPrompt() },
+          { role: 'user' as const, content: buildUserPrompt(datasets) },
+        ],
+      },
+      { signal: req.signal },
+    );
+  let stream: Awaited<ReturnType<typeof createStream>>;
+  try {
+    stream = await createStream();
+  } catch (error) {
+    console.error('[AI analyze] provider request failed:', error);
+    const status = (error as { status?: number }).status === 429 ? 429 : 502;
+    return textResponse(
+      status === 429
+        ? 'AI provider rate limit reached. Try again shortly.'
+        : 'AI provider request failed. Try again later.',
+      status,
+    );
+  }
 
   const encoder = new TextEncoder();
   const readable = new ReadableStream({
@@ -82,17 +95,20 @@ export async function POST(req: NextRequest) {
           const text = chunk.choices[0]?.delta?.content ?? '';
           if (text) controller.enqueue(encoder.encode(text));
         }
-      } finally {
         controller.close();
+      } catch (error) {
+        controller.error(error);
       }
+    },
+    cancel() {
+      stream.controller.abort();
     },
   });
 
   return new Response(readable, {
     headers: {
       'Content-Type': 'text/plain; charset=utf-8',
-      'Cache-Control': 'no-store',
-      'X-Content-Type-Options': 'nosniff',
+      ...RESPONSE_HEADERS,
     },
   });
 }
