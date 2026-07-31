@@ -12,6 +12,7 @@ insights and an interactive chat interface.
 - FRASER historical archives — themes, timelines, and primary-source documents
 - AI Insights panel and streaming chat for natural-language economic Q&A
 - Release calendar for upcoming FRED data publications
+- Latest financial news headlines from the free GDELT DOC API and Federal Reserve RSS
 
 **Tech stack:** Next.js 16 · React 19 · TypeScript · Tailwind CSS v4 · TanStack Query v5 · Chart.js · Azure App Service
 
