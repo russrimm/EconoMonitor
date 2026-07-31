@@ -19,6 +19,7 @@ import { usePinnedSeries } from '@/hooks/usePinnedSeries';
 import { formatDate } from '@/lib/utils';
 import { SeriesChart } from '@/components/charts/SeriesChart';
 import { ExportButton } from '@/components/ExportButton';
+import { TransformControls } from '@/components/controls/TransformControls';
 import { InsightsPanel } from '@/components/ai/InsightsPanel';
 import { CausalExplainerPanel } from '@/components/ai/CausalExplainerPanel';
 import {
@@ -27,7 +28,15 @@ import {
   eventsInRange,
   fraserSearchUrl,
 } from '@/lib/events';
-import type { ObservationRange } from '@/lib/fred';
+import {
+  aggregatableFrequencies,
+  transformSuffix,
+  transformedUnits,
+  type FredAggregation,
+  type FredFrequency,
+  type FredUnits,
+  type ObservationRange,
+} from '@/lib/fred';
 
 const RANGES: { label: string; value: ObservationRange }[] = [
   { label: '1Y', value: '1y' },
@@ -41,15 +50,37 @@ export default function SeriesDetailPage() {
   const [range, setRange] = useState<ObservationRange>('5y');
   const [showNotes, setShowNotes] = useState(false);
   const [showEvents, setShowEvents] = useState(true);
+  const [units, setUnits] = useState<FredUnits>('lin');
+  const [frequency, setFrequency] = useState<FredFrequency>('');
+  const [aggregation, setAggregation] = useState<FredAggregation>('avg');
 
   const { toggle, isPinned } = usePinnedSeries();
   const { data: seriesMeta, isLoading: metaLoading } = useSeries(seriesId);
-  const { data: obsData, isLoading: obsLoading } = useObservations(seriesId, range);
+
+  const nativeFrequencyShort = seriesMeta?.seriess?.[0]?.frequency_short ?? '';
+
+  // A frequency picked for a previous series may not be legal for this one
+  // (FRED can only aggregate downward), so validate before it reaches the API.
+  const effectiveFrequency: FredFrequency =
+    frequency &&
+    aggregatableFrequencies(nativeFrequencyShort).some((f) => f.value === frequency)
+      ? frequency
+      : '';
+
+  const { data: obsData, isLoading: obsLoading } = useObservations(seriesId, range, {
+    units,
+    frequency: effectiveFrequency,
+    aggregation,
+  });
 
   const series = seriesMeta?.seriess?.[0];
   const observations = obsData?.observations ?? [];
   const valid = observations.filter((o) => o.value !== '.' && o.value !== '');
   const pinned = series ? isPinned(seriesId) : false;
+
+  // Units shown on the axis, tooltip and AI panels once a transform is applied.
+  const displayUnits = transformedUnits(series?.units_short ?? '', units);
+  const displayTitle = `${series?.title ?? seriesId}${transformSuffix(units)}`;
 
   // Events that fall within the visible chart range.
   const visibleEvents = useMemo(() => {
@@ -126,7 +157,12 @@ export default function SeriesDetailPage() {
             {series.title}
           </h1>
           <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
-            Units: {series.units}
+            Units: {units === 'lin' ? series.units : displayUnits}
+            {units !== 'lin' && (
+              <span className="ml-1.5" style={{ opacity: 0.75 }}>
+                (transformed from {series.units})
+              </span>
+            )}
           </p>
         </div>
 
@@ -160,7 +196,7 @@ export default function SeriesDetailPage() {
           {valid.length > 0 && (
             <ExportButton
               seriesId={series.id}
-              title={series.title}
+              title={displayTitle}
               observations={valid}
             />
           )}
@@ -251,6 +287,34 @@ export default function SeriesDetailPage() {
           </div>
         </div>
 
+        {/* Transformation controls */}
+        <div
+          className="flex items-center justify-between gap-3 flex-wrap pt-1"
+          style={{ borderTop: '1px solid var(--border)' }}
+        >
+          <TransformControls
+            units={units}
+            onUnitsChange={setUnits}
+            nativeFrequencyShort={series.frequency_short}
+            frequency={effectiveFrequency}
+            onFrequencyChange={setFrequency}
+            aggregation={aggregation}
+            onAggregationChange={setAggregation}
+          />
+          {units !== 'lin' && (
+            <button
+              onClick={() => {
+                setUnits('lin');
+                setFrequency('');
+              }}
+              className="text-xs font-medium underline"
+              style={{ color: 'var(--accent)' }}
+            >
+              Reset to levels
+            </button>
+          )}
+        </div>
+
         {/* Chart */}
         <div className="h-80 relative">
           {obsLoading ? (
@@ -264,8 +328,8 @@ export default function SeriesDetailPage() {
           ) : (
             <SeriesChart
               observations={valid}
-              title={series.title}
-              units={series.units_short}
+              title={displayTitle}
+              units={displayUnits}
               events={showEvents ? visibleEvents : []}
             />
           )}
@@ -375,8 +439,8 @@ export default function SeriesDetailPage() {
       {valid.length > 0 && (
         <CausalExplainerPanel
           seriesId={series.id}
-          label={series.title}
-          units={series.units_short}
+          label={displayTitle}
+          units={displayUnits}
           observations={valid}
         />
       )}
@@ -385,8 +449,8 @@ export default function SeriesDetailPage() {
         <InsightsPanel
           datasets={[{
             seriesId: series.id,
-            label: series.title,
-            units: series.units_short,
+            label: displayTitle,
+            units: displayUnits,
             observations: valid,
           }]}
         />

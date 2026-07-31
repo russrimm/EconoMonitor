@@ -6,7 +6,8 @@ insights and an interactive chat interface.
 **Features**
 
 - Live metric cards for key economic indicators (GDP, unemployment, inflation, interest rates, and more)
-- Interactive multi-series comparison charts with pinnable indicators
+- FRED data transformations — year-over-year and period percent change, absolute change, annualised rates, and natural log, plus optional frequency aggregation
+- Interactive multi-series comparison charts with pinnable indicators and rebasing (index to 100, % change from start, z-score) so series with different units share one axis
 - Browsable FRED category tree and full-text series search
 - FRASER historical archives — themes, timelines, and primary-source documents
 - AI Insights panel and streaming chat for natural-language economic Q&A
@@ -23,7 +24,7 @@ insights and an interactive chat interface.
 npm install
 
 # Copy the example env file and fill in your API keys
-cp .env.local.example .env.local   # or create .env.local manually (see below)
+cp .env.sample .env.local
 
 # Start the development server
 npm run dev

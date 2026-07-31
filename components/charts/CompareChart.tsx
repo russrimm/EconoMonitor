@@ -31,12 +31,24 @@ export interface CompareDataset {
 
 interface Props {
   datasets: CompareDataset[];
+  /**
+   * When set, every series is drawn against a single Y-axis carrying this
+   * label. Used by the normalization modes, where the series no longer carry
+   * meaningful individual units.
+   */
+  sharedAxisLabel?: string | null;
+  /**
+   * Value to emphasise with a highlighted gridline (e.g. 100 for an indexed
+   * chart, 0 for percent-change or z-score).
+   */
+  baseline?: number | null;
 }
 
-export function CompareChart({ datasets }: Props) {
+export function CompareChart({ datasets, sharedAxisLabel = null, baseline = null }: Props) {
   const { dark } = useTheme();
 
   const gridColor  = dark ? 'rgba(148,163,184,0.12)' : 'rgba(15,23,42,0.08)';
+  const baselineColor = dark ? 'rgba(148,163,184,0.55)' : 'rgba(15,23,42,0.35)';
   const tickColor  = dark ? '#94a3b8' : '#64748b';
   const legendColor = dark ? '#94a3b8' : '#64748b';
   const tooltipBg  = dark ? '#1e293b' : '#ffffff';
@@ -54,6 +66,8 @@ export function CompareChart({ datasets }: Props) {
     );
   }
 
+  const shared = sharedAxisLabel !== null;
+
   // Determine which units go on which y-axis (max 2 axes)
   const unitGroups: string[] = [];
   datasets.forEach((d) => {
@@ -66,7 +80,7 @@ export function CompareChart({ datasets }: Props) {
       .filter((o) => o.value !== '.' && o.value !== '')
       .map((o) => ({ x: o.date, y: parseFloat(o.value) }));
 
-    const axisId = unitGroups.indexOf(d.units) === 0 ? 'y' : 'y1';
+    const axisId = shared || unitGroups.indexOf(d.units) === 0 ? 'y' : 'y1';
 
     return {
       label: `${d.seriesId} — ${d.label}`,
@@ -81,6 +95,8 @@ export function CompareChart({ datasets }: Props) {
     };
   });
 
+  const primaryAxisLabel = shared ? sharedAxisLabel : unitGroups[0] ?? '';
+
   const scales: Record<string, object> = {
     x: {
       type: 'time',
@@ -91,12 +107,17 @@ export function CompareChart({ datasets }: Props) {
     y: {
       position: 'left',
       title: {
-        display: !!unitGroups[0],
-        text: unitGroups[0] ?? '',
+        display: !!primaryAxisLabel,
+        text: primaryAxisLabel,
         color: tickColor,
         font: { size: 11 },
       },
-      grid: { color: gridColor },
+      grid: {
+        color: (ctx: { tick?: { value: number } }) =>
+          baseline !== null && ctx.tick?.value === baseline
+            ? baselineColor
+            : gridColor,
+      },
       ticks: {
         color: tickColor,
         callback: (v: unknown) =>
@@ -107,7 +128,7 @@ export function CompareChart({ datasets }: Props) {
     },
   };
 
-  if (unitGroups.length > 1) {
+  if (!shared && unitGroups.length > 1) {
     scales.y1 = {
       position: 'right',
       title: {

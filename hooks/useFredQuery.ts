@@ -10,8 +10,18 @@ import {
   getCategorySeries,
   getReleases,
   getReleaseDates,
+  type ObservationOptions,
   type ObservationRange,
 } from '@/lib/fred';
+
+/** Stable, primitive query-key fragment for an options bag. */
+function optionsKey(options: ObservationOptions) {
+  return [
+    options.units ?? 'lin',
+    options.frequency ?? '',
+    options.frequency ? options.aggregation ?? 'avg' : '',
+  ] as const;
+}
 
 // ─── Series ────────────────────────────────────────────────────────────────────
 
@@ -37,21 +47,30 @@ export function useSeries(seriesId: string) {
   });
 }
 
-export function useObservations(seriesId: string, range: ObservationRange = 'max') {
+export function useObservations(
+  seriesId: string,
+  range: ObservationRange = 'max',
+  options: ObservationOptions = {},
+) {
   return useQuery({
-    queryKey: ['observations', seriesId, range],
-    queryFn: () => getObservations(seriesId, range),
+    queryKey: ['observations', seriesId, range, ...optionsKey(options)],
+    queryFn: () => getObservations(seriesId, range, options),
     enabled: !!seriesId,
     staleTime: 5 * 60 * 1000,
   });
 }
 
 /** Fetch multiple series' observations in parallel */
-export function useMultiObservations(seriesIds: string[], range: ObservationRange) {
+export function useMultiObservations(
+  seriesIds: string[],
+  range: ObservationRange,
+  options: ObservationOptions = {},
+) {
+  const key = optionsKey(options);
   return useQueries({
     queries: seriesIds.map((id) => ({
-      queryKey: ['observations', id, range],
-      queryFn: () => getObservations(id, range),
+      queryKey: ['observations', id, range, ...key],
+      queryFn: () => getObservations(id, range, options),
       enabled: !!id,
       staleTime: 5 * 60 * 1000,
     })),
