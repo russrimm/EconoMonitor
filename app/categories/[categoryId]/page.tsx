@@ -14,7 +14,8 @@ import { SeriesCard } from '@/components/search/SeriesCard';
 
 export default function CategoryDetailPage() {
   const { categoryId } = useParams<{ categoryId: string }>();
-  const id = parseInt(categoryId, 10);
+  const validCategoryId = /^\d+$/.test(categoryId);
+  const id = validCategoryId ? parseInt(categoryId, 10) : -1;
   const [offset, setOffset] = useState(0);
   const [childFilter, setChildFilter] = useState('');
 
@@ -34,6 +35,23 @@ export default function CategoryDetailPage() {
   const filteredChildren = childFilter.trim()
     ? children.filter((c) => c.name.toLowerCase().includes(childFilter.toLowerCase()))
     : children;
+
+  if (!validCategoryId) {
+    return (
+      <div className="py-20 text-center">
+        <p className="font-semibold" style={{ color: 'var(--text)' }}>
+          Invalid category.
+        </p>
+        <Link
+          href="/categories"
+          className="mt-3 inline-block text-sm underline"
+          style={{ color: 'var(--accent)' }}
+        >
+          Browse categories
+        </Link>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -78,6 +96,7 @@ export default function CategoryDetailPage() {
               <div className="relative">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />
                 <input
+                  aria-label="Filter sub-categories"
                   value={childFilter}
                   onChange={(e) => setChildFilter(e.target.value)}
                   placeholder="Filter sub-categories…"

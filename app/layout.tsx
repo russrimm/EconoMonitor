@@ -15,9 +15,29 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "EconoMonitor — Economic Research",
+  metadataBase: new URL(
+    process.env.NEXT_PUBLIC_SITE_URL ?? "https://economonitor.azurewebsites.net",
+  ),
+  title: {
+    default: "EconoMonitor — US Economic Research",
+    template: "%s | EconoMonitor",
+  },
   description:
     "Explore, chart, and compare thousands of economic indicators from the Federal Reserve Bank of St. Louis FRED database.",
+  applicationName: "EconoMonitor",
+  openGraph: {
+    type: "website",
+    siteName: "EconoMonitor",
+    title: "EconoMonitor — US Economic Research",
+    description:
+      "Explore, chart, and compare US economic indicators from FRED and historical sources from FRASER.",
+  },
+  twitter: {
+    card: "summary",
+    title: "EconoMonitor — US Economic Research",
+    description:
+      "Explore, chart, and compare US economic indicators from FRED and FRASER.",
+  },
 };
 
 export default function RootLayout({

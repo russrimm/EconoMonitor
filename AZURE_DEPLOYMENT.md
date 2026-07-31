@@ -227,7 +227,7 @@ az webapp deploy \
 ## 6. Automated CI/CD (GitHub Actions)
 
 The workflow at [`.github/workflows/azure-deploy.yml`](./.github/workflows/azure-deploy.yml)
-automates build and deploy on every push to `main`.
+validates pull requests and automates deployment on every push to `main`.
 
 ### Authentication: Microsoft Entra ID OIDC (Workload Identity Federation)
 
@@ -338,16 +338,18 @@ This is required for two reasons:
 
 ### 6d. How the Workflow Runs
 
-Every push to `main` (or a manual dispatch) triggers three sequential jobs:
+Pull requests run only the Build job. A push to `main` or manual dispatch runs
+all three jobs:
 
 | Job | What it does |
 |-----|--------------|
-| **Build** | `npm ci` → `npm run build` → assembles standalone bundle → uploads `deploy.zip` artifact |
+| **Build** | Checks tracked files for secret patterns → `npm ci` → tests → typecheck → lint → production build. Deployment events also assemble and upload `deploy.zip`. |
 | **Deploy** | Downloads artifact → logs in via OIDC → deploys zip → syncs App Settings from secrets |
-| **Validate** | Waits 20 s → `curl` homepage (200) → `curl` AI chat endpoint (200/206) |
+| **Validate** | Waits 20 s → checks the homepage (200) → verifies AI request validation (400, without model inference) |
 
 See [`.github/workflows/azure-deploy.yml`](./.github/workflows/azure-deploy.yml)
-for the full workflow definition.
+for the full workflow definition. Third-party actions are pinned to immutable
+commit SHAs, and only the Deploy job can request an OIDC token.
 
 ---
 

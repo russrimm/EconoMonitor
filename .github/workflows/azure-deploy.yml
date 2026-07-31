@@ -1,7 +1,6 @@
 # Deploy EconoMonitor to Azure App Service
 #
-# Triggers on every push to 'main'.
-# Also provides a manual trigger (workflow_dispatch) for on-demand deploys.
+# Validates pull requests, deploys pushes to 'main', and supports manual deploys.
 #
 # ── One-time setup ──────────────────────────────────────────────────────────
 #
@@ -13,9 +12,9 @@
 #
 #    Secret name               Value
 #    ─────────────────────     ────────────────────────────────────────────────
-#    AZURE_CLIENT_ID           b82f9fe7-92aa-4ed6-98b0-90dfb24fd535
-#    AZURE_TENANT_ID           f33d7d7f-d7a8-49c9-9dfe-af8c9ca30123
-#    AZURE_SUBSCRIPTION_ID     4b2df633-d9f8-4261-adf9-226dd6f19033
+#    AZURE_CLIENT_ID           Your Entra application client ID
+#    AZURE_TENANT_ID           Your Entra tenant ID
+#    AZURE_SUBSCRIPTION_ID     Your Azure subscription ID
 #    FRED_API_KEY              Your FRED API key
 #    FRASER_API_KEY            Your FRASER API key
 #    GITHUB_TOKEN_AI           Your GitHub PAT (for Models API / AI features)
@@ -28,6 +27,9 @@ on:
   push:
     branches:
       - main
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 env:
@@ -35,28 +37,42 @@ env:
   AZURE_RESOURCE_GROUP:   rg-economonitor
   NODE_VERSION:           "22.x"
 
-permissions:
-  contents: read
-  id-token: write   # required for OIDC login
+permissions: {}
 
 jobs:
   # ── Build ─────────────────────────────────────────────────────────────────
   build:
     name: Build
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Set up Node.js ${{ env.NODE_VERSION }}
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
 
+      - name: Check tracked files for secret patterns
+        run: node scripts/check-secrets.mjs
+
       - name: Install dependencies
         run: npm ci
+
+      - name: Run unit tests
+        run: npm test
+
+      - name: Check TypeScript
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
 
       - name: Build Next.js application (standalone mode)
         env:
@@ -67,11 +83,13 @@ jobs:
       # server in .next/standalone (~37 MB) instead of shipping all of node_modules.
       # Static assets and public/ must be copied in before zipping.
       - name: Assemble standalone bundle
+        if: github.event_name != 'pull_request'
         run: |
           cp -r .next/static .next/standalone/.next/static
           cp -r public        .next/standalone/public
 
       - name: Create deployment package
+        if: github.event_name != 'pull_request'
         run: |
           cd .next/standalone
           zip -r ../../deploy.zip .
@@ -79,7 +97,8 @@ jobs:
           echo "deploy.zip size: $(du -sh deploy.zip | cut -f1)"
 
       - name: Upload deployment artifact
-        uses: actions/upload-artifact@v4
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: deploy-package
           path: deploy.zip
@@ -90,25 +109,29 @@ jobs:
     name: Deploy
     runs-on: ubuntu-latest
     needs: build
+    if: github.event_name != 'pull_request'
+    permissions:
+      contents: read
+      id-token: write
     environment:
       name: production
       url: https://${{ env.AZURE_WEBAPP_NAME }}.azurewebsites.net
 
     steps:
       - name: Download deployment artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: deploy-package
 
       - name: Log in to Azure
-        uses: azure/login@v2
+        uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2.3.0
         with:
           client-id:       ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id:       ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Deploy to Azure App Service
-        uses: azure/webapps-deploy@v3
+        uses: azure/webapps-deploy@02a81bead70021f5284939794bcec79c271ab383 # v3.0.8
         with:
           app-name:  ${{ env.AZURE_WEBAPP_NAME }}
           package:   deploy.zip
@@ -116,7 +139,7 @@ jobs:
       # Keep runtime secrets in sync with what's in GitHub Secrets.
       # Remove or comment out this step if you manage App Settings manually.
       - name: Sync App Settings
-        uses: azure/CLI@v2
+        uses: azure/CLI@9f7ce6f37c31b777ec6c6b6d1dfe7db79f497956 # v2.2.0
         with:
           inlineScript: |
             az webapp config appsettings set \
@@ -133,6 +156,8 @@ jobs:
     name: Validate
     runs-on: ubuntu-latest
     needs: deploy
+    if: github.event_name != 'pull_request'
+    permissions: {}
 
     steps:
       - name: Wait for app to warm up
@@ -146,16 +171,16 @@ jobs:
           echo "Homepage status: $STATUS"
           [ "$STATUS" = "200" ] || exit 1
 
-      - name: Check AI chat endpoint
+      - name: Check AI chat request validation
         run: |
           STATUS=$(curl -o /dev/null -s -w "%{http_code}" \
             --max-time 30 \
             -X POST \
             -H "Content-Type: application/json" \
-            -d '{"messages":[{"role":"user","content":"What is GDP?"}]}' \
+            -d '{"messages":[]}' \
             "https://${{ env.AZURE_WEBAPP_NAME }}.azurewebsites.net/api/ai/chat")
           echo "Chat API status: $STATUS"
-          [ "$STATUS" = "200" ] || [ "$STATUS" = "206" ] || exit 1
+          [ "$STATUS" = "400" ] || exit 1
 
       - name: Deployment summary
         run: |

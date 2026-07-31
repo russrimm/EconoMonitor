@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useRef, useState } from 'react';
-import type { AnalyzeDataset } from '@/lib/ai';
+import { prepareDatasetsForAnalysis, type AnalyzeDataset } from '@/lib/ai';
 
 export interface UseAiAnalysisResult {
   analyze: (datasets: AnalyzeDataset[]) => Promise<void>;
@@ -38,7 +38,7 @@ export function useAiAnalysis(): UseAiAnalysisResult {
       const res = await fetch('/api/ai/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ datasets }),
+        body: JSON.stringify({ datasets: prepareDatasetsForAnalysis(datasets) }),
         signal: controller.signal,
       });
 

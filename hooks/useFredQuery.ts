@@ -20,6 +20,7 @@ function optionsKey(options: ObservationOptions) {
     options.units ?? 'lin',
     options.frequency ?? '',
     options.frequency ? options.aggregation ?? 'avg' : '',
+    options.maxObservations ?? '',
   ] as const;
 }
 
@@ -95,6 +96,7 @@ export function useCategory(categoryId: number) {
   return useQuery({
     queryKey: ['category', categoryId],
     queryFn: () => getCategory(categoryId),
+    enabled: Number.isInteger(categoryId) && categoryId >= 0,
     staleTime: 30 * 60 * 1000,
   });
 }
@@ -103,6 +105,7 @@ export function useCategoryChildren(categoryId: number) {
   return useQuery({
     queryKey: ['category-children', categoryId],
     queryFn: () => getCategoryChildren(categoryId),
+    enabled: Number.isInteger(categoryId) && categoryId >= 0,
     staleTime: 30 * 60 * 1000,
   });
 }
@@ -111,6 +114,7 @@ export function useCategorySeries(categoryId: number, offset = 0) {
   return useQuery({
     queryKey: ['category-series', categoryId, offset],
     queryFn: () => getCategorySeries(categoryId, offset),
+    enabled: Number.isInteger(categoryId) && categoryId >= 0,
     staleTime: 10 * 60 * 1000,
   });
 }

@@ -8,7 +8,6 @@ import {
   extractTitle,
   extractId,
   extractAbstract,
-  extractUrl,
   type FraserTheme,
   type FraserTimeline,
 } from '@/lib/fraser';
@@ -17,7 +16,6 @@ function ThemeCard({ theme }: { theme: FraserTheme }) {
   const id = extractId(theme.recordInfo);
   const title = extractTitle(theme.titleInfo);
   const abstract = extractAbstract(theme.abstract);
-  const fraserUrl = extractUrl(theme.location);
   const topics = theme.subject?.topic?.slice(0, 4) ?? [];
 
   return (

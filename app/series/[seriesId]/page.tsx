@@ -22,6 +22,7 @@ import { ExportButton } from '@/components/ExportButton';
 import { TransformControls } from '@/components/controls/TransformControls';
 import { InsightsPanel } from '@/components/ai/InsightsPanel';
 import { CausalExplainerPanel } from '@/components/ai/CausalExplainerPanel';
+import { ChartDataTable } from '@/components/charts/ChartDataTable';
 import {
   CATEGORY_COLOR,
   EVENTS,
@@ -55,7 +56,8 @@ export default function SeriesDetailPage() {
   const [aggregation, setAggregation] = useState<FredAggregation>('avg');
 
   const { toggle, isPinned } = usePinnedSeries();
-  const { data: seriesMeta, isLoading: metaLoading } = useSeries(seriesId);
+  const metaQuery = useSeries(seriesId);
+  const { data: seriesMeta, isLoading: metaLoading } = metaQuery;
 
   const nativeFrequencyShort = seriesMeta?.seriess?.[0]?.frequency_short ?? '';
 
@@ -67,11 +69,12 @@ export default function SeriesDetailPage() {
       ? frequency
       : '';
 
-  const { data: obsData, isLoading: obsLoading } = useObservations(seriesId, range, {
+  const observationsQuery = useObservations(seriesId, range, {
     units,
     frequency: effectiveFrequency,
     aggregation,
   });
+  const { data: obsData, isLoading: obsLoading } = observationsQuery;
 
   const series = seriesMeta?.seriess?.[0];
   const observations = obsData?.observations ?? [];
@@ -96,6 +99,23 @@ export default function SeriesDetailPage() {
         <div className="h-6 rounded w-1/3" style={{ background: 'var(--border)' }} />
         <div className="h-10 rounded w-2/3" style={{ background: 'var(--border)' }} />
         <div className="h-80 rounded-xl" style={{ background: 'var(--surface)' }} />
+      </div>
+    );
+  }
+
+  if (metaQuery.isError) {
+    return (
+      <div className="py-20 text-center" role="alert">
+        <p className="text-lg font-semibold" style={{ color: 'var(--text)' }}>
+          Series details could not be loaded.
+        </p>
+        <button
+          onClick={() => void metaQuery.refetch()}
+          className="mt-4 rounded-lg px-3 py-1.5 text-sm font-medium"
+          style={{ color: 'var(--text)', border: '1px solid var(--border)' }}
+        >
+          Try again
+        </button>
       </div>
     );
   }
@@ -215,6 +235,20 @@ export default function SeriesDetailPage() {
           { label: 'Frequency', value: series.frequency },
           { label: 'Units', value: series.units_short },
           { label: 'Seasonal Adj.', value: series.seasonal_adjustment_short },
+          {
+            label: 'Source',
+            value: (
+              <a
+                href={`https://fred.stlouisfed.org/series/${encodeURIComponent(series.id)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:underline"
+                style={{ color: 'var(--accent)' }}
+              >
+                FRED
+              </a>
+            ),
+          },
           { label: 'Popularity', value: `${series.popularity} / 100` },
           {
             label: 'Observations',
@@ -253,6 +287,7 @@ export default function SeriesDetailPage() {
               <button
                 onClick={() => setShowEvents((p) => !p)}
                 title="Overlay historical economic events"
+                aria-pressed={showEvents}
                 className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors"
                 style={{
                   background: showEvents
@@ -271,6 +306,7 @@ export default function SeriesDetailPage() {
                 <button
                   key={value}
                   onClick={() => setRange(value)}
+                  aria-pressed={range === value}
                   className="px-3 py-1 rounded-md text-sm font-medium transition-colors"
                   style={{
                     background:
@@ -317,7 +353,22 @@ export default function SeriesDetailPage() {
 
         {/* Chart */}
         <div className="h-80 relative">
-          {obsLoading ? (
+          {observationsQuery.isError ? (
+            <div
+              className="h-full rounded-xl flex flex-col items-center justify-center gap-3 text-sm"
+              role="alert"
+              style={{ background: 'var(--surface-2)', color: 'var(--red)' }}
+            >
+              Observations could not be loaded.
+              <button
+                onClick={() => void observationsQuery.refetch()}
+                className="rounded-lg px-3 py-1.5 text-xs font-medium"
+                style={{ color: 'var(--text)', border: '1px solid var(--border)' }}
+              >
+                Try again
+              </button>
+            </div>
+          ) : obsLoading ? (
             <div
               className="h-full rounded-xl flex items-center justify-center gap-2"
               style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}
@@ -334,6 +385,19 @@ export default function SeriesDetailPage() {
             />
           )}
         </div>
+        {!obsLoading && !observationsQuery.isError && valid.length > 0 && (
+          <ChartDataTable
+            title={`${displayTitle} chart data`}
+            datasets={[
+              {
+                seriesId: series.id,
+                label: displayTitle,
+                units: displayUnits,
+                observations: valid,
+              },
+            ]}
+          />
+        )}
       </div>
 
       {/* Historical events list */}

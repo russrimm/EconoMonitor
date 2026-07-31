@@ -23,7 +23,7 @@ const FEATURES = [
     title: 'Dashboard',
     href: '/',
     description:
-      'Personalised overview of up to 6 pinned economic indicators, each with a live sparkline and the latest value. Upcoming data releases are listed at the bottom.',
+      'Personalised overview of pinned economic indicators, each with a recent sparkline, observation date, source link, and latest published value. Upcoming data releases are listed at the bottom.',
   },
   {
     icon: Search,
@@ -58,7 +58,7 @@ const FEATURES = [
     title: 'Releases',
     href: '/releases',
     description:
-      'Calendar of upcoming scheduled data releases — GDP revisions, employment reports, CPI prints, Fed meeting minutes, and more — sorted chronologically so you never miss a market-moving data point.',
+      'Searchable directory of FRED data releases, including GDP, employment, prices, monetary policy, and other source publications.',
   },
   {
     icon: BookOpen,
@@ -185,7 +185,7 @@ export default function AboutPage() {
           and AI. Explore hundreds of thousands of economic and financial time series spanning
           GDP, employment, inflation, interest rates, housing, trade, and more — browse
           150 years of Federal Reserve archives, compare indicators side-by-side, and let
-          let AI surface insights hidden in the data.
+          let AI surface patterns in the data.
         </p>
         <div className="flex gap-3 flex-wrap mt-2">
           <Link

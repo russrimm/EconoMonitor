@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Loader2, MessageCircle, RotateCcw, Send, Sparkles } from 'lucide-react';
+import { MAX_CHAT_MESSAGES } from '@/lib/aiValidation';
+import { AiDataNotice } from '@/components/ai/AiDataNotice';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -116,7 +118,7 @@ export default function ChatPage() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            messages: [...messages, userMsg],
+            messages: [...messages, userMsg].slice(-MAX_CHAT_MESSAGES),
           }),
           signal: controller.signal,
         });
@@ -325,7 +327,11 @@ export default function ChatPage() {
         style={{ borderTop: '1px solid var(--border)' }}
       >
         <form onSubmit={handleSubmit} className="flex items-end gap-2">
+          <label htmlFor="chat-message" className="sr-only">
+            Message
+          </label>
           <textarea
+            id="chat-message"
             ref={inputRef}
             value={input}
             onChange={(e) => {
@@ -351,6 +357,7 @@ export default function ChatPage() {
             className="shrink-0 p-2.5 rounded-xl transition-colors disabled:opacity-40"
             style={{ background: 'var(--accent)', color: '#fff' }}
             title="Send"
+            aria-label="Send message"
           >
             {isStreaming ? (
               <Loader2 className="w-4 h-4 animate-spin" />
@@ -359,9 +366,12 @@ export default function ChatPage() {
             )}
           </button>
         </form>
-        <p className="text-[10px] mt-1.5 text-center" style={{ color: 'var(--text-muted)' }}>
-          AI responses may be inaccurate. Verify important figures with the live data on this site.
-        </p>
+        <div className="mx-auto mt-1.5 max-w-2xl">
+          <AiDataNotice kind="chat" />
+          <p className="mt-1 text-center text-[10px]" style={{ color: 'var(--text-muted)' }}>
+            AI responses may be inaccurate. Verify important figures with the live data on this site.
+          </p>
+        </div>
       </div>
     </div>
   );

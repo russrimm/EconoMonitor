@@ -7,7 +7,7 @@ import { useMultiObservations, useMultiSeries, useSeriesSearch } from '@/hooks/u
 import { usePinnedSeries } from '@/hooks/usePinnedSeries';
 import { InsightsPanel } from '@/components/ai/InsightsPanel';
 import { CHART_COLORS } from '@/lib/utils';
-import type { ObservationRange } from '@/lib/fred';
+import { parseObservationRange, type ObservationRange } from '@/lib/fred';
 import type { AnalyzeDataset } from '@/lib/ai';
 
 const MAX_SERIES = 6;
@@ -35,10 +35,10 @@ function InsightsPageInner() {
   const selectedIds = (searchParams.get('ids') ?? '')
     .split(',')
     .map((s) => s.trim())
-    .filter(Boolean)
+    .filter((id) => /^[A-Z0-9_-]{1,30}$/.test(id))
     .slice(0, MAX_SERIES);
 
-  const range = (searchParams.get('range') ?? '5y') as ObservationRange;
+  const range = parseObservationRange(searchParams.get('range'));
 
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -60,18 +60,26 @@ function InsightsPageInner() {
   const datasets: AnalyzeDataset[] = selectedIds
     .map((id, i) => {
       const meta = metaResults[i]?.data?.seriess?.[0];
-      const obs = obsResults[i]?.data?.observations ?? [];
-      if (!meta) return null;
+      const obs = (obsResults[i]?.data?.observations ?? []).filter(
+        (observation) =>
+          observation.value !== '.' && observation.value !== '',
+      );
+      if (!meta || obs.length === 0) return null;
       return {
         seriesId: id,
         label: meta.title,
         units: meta.units_short,
-        observations: obs.filter((o) => o.value !== '.' && o.value !== ''),
+        observations: obs,
       };
     })
     .filter(Boolean) as AnalyzeDataset[];
 
-  const isLoadingAny = obsResults.some((r) => r.isLoading) && selectedIds.length > 0;
+  const isLoadingAny =
+    [...metaResults, ...obsResults].some((r) => r.isLoading) &&
+    selectedIds.length > 0;
+  const failedIds = selectedIds.filter(
+    (_, index) => metaResults[index]?.isError || obsResults[index]?.isError,
+  );
 
   const updateUrl = useCallback(
     (ids: string[], newRange?: ObservationRange) => {
@@ -136,6 +144,7 @@ function InsightsPageInner() {
                 : 'Search to add a series…'
             }
             disabled={selectedIds.length >= MAX_SERIES}
+            aria-label="Search for a FRED series to analyze"
             className="w-full pl-9 pr-16 py-2 text-sm rounded-xl focus:outline-none focus:ring-2 disabled:opacity-50"
             style={{
               background: 'var(--surface)',
@@ -288,6 +297,7 @@ function InsightsPageInner() {
             <button
               key={value}
               onClick={() => setRange(value)}
+              aria-pressed={range === value}
               className="px-3 py-1 rounded-md text-sm font-medium transition-colors"
               style={{
                 background: range === value ? 'var(--accent)' : 'var(--surface)',
@@ -313,6 +323,29 @@ function InsightsPageInner() {
       )}
 
       {/* InsightsPanel */}
+      {failedIds.length > 0 && (
+        <div
+          className="flex items-center justify-between gap-3 rounded-xl px-4 py-3 text-sm"
+          role="alert"
+          style={{
+            color: 'var(--red)',
+            background: 'color-mix(in srgb, var(--red) 10%, transparent)',
+            border: '1px solid color-mix(in srgb, var(--red) 30%, transparent)',
+          }}
+        >
+          <span>Could not load: {failedIds.join(', ')}.</span>
+          <button
+            onClick={() => {
+              for (const result of [...metaResults, ...obsResults]) {
+                if (result.isError) void result.refetch();
+              }
+            }}
+            className="font-medium underline"
+          >
+            Retry
+          </button>
+        </div>
+      )}
       {!isLoadingAny && datasets.length > 0 && (
         <InsightsPanel
           datasets={datasets}

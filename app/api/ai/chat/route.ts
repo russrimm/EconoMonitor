@@ -1,11 +1,18 @@
 import { NextRequest } from 'next/server';
 import OpenAI from 'openai';
+import { validateChatMessages } from '@/lib/aiValidation';
+import { readLimitedJson, RequestBodyError } from '@/lib/http';
 
 export const runtime = 'nodejs';
 
-export interface ChatMessage {
-  role: 'user' | 'assistant';
-  content: string;
+const MAX_BODY_BYTES = 96 * 1024;
+const RESPONSE_HEADERS = {
+  'Cache-Control': 'no-store',
+  'X-Content-Type-Options': 'nosniff',
+};
+
+function textResponse(message: string, status: number) {
+  return new Response(message, { status, headers: RESPONSE_HEADERS });
 }
 
 const SYSTEM_PROMPT = `You are EconoMonitor AI — a knowledgeable economic research assistant specialising in macroeconomics, financial markets, monetary policy, and economic data.
@@ -29,43 +36,21 @@ export async function POST(req: NextRequest) {
   const useAzure = Boolean(azureEndpoint && azureKey);
 
   if (!useAzure && !githubToken) {
-    return new Response('AI chat is not configured. Add GITHUB_TOKEN to .env.local.', {
-      status: 503,
-    });
+    return textResponse('AI chat is not configured. Add GITHUB_TOKEN to .env.local.', 503);
   }
 
   let body: unknown;
   try {
-    body = await req.json();
-  } catch {
-    return new Response('Invalid JSON body.', { status: 400 });
-  }
-
-  const messages = (body as { messages?: unknown }).messages;
-  if (!Array.isArray(messages) || messages.length === 0) {
-    return new Response('Body must be { messages: ChatMessage[] }.', { status: 400 });
-  }
-
-  // Validate each message — only allow role/content string fields (no injection surface)
-  for (const msg of messages) {
-    if (
-      typeof msg !== 'object' ||
-      msg === null ||
-      !['user', 'assistant'].includes((msg as Record<string, unknown>).role as string) ||
-      typeof (msg as Record<string, unknown>).content !== 'string'
-    ) {
-      return new Response('Each message must have role ("user"|"assistant") and string content.', {
-        status: 400,
-      });
+    body = await readLimitedJson(req, MAX_BODY_BYTES);
+  } catch (error) {
+    if (error instanceof RequestBodyError) {
+      return textResponse(error.message, error.status);
     }
-    const content = (msg as Record<string, unknown>).content as string;
-    if (content.length > 4000) {
-      return new Response('Message content exceeds 4000 character limit.', { status: 400 });
-    }
+    throw error;
   }
 
-  // Cap history depth to prevent prompt bloat
-  const recentMessages = (messages as ChatMessage[]).slice(-20);
+  const validation = validateChatMessages(body);
+  if (!validation.ok) return textResponse(validation.error, 400);
 
   const client = useAzure
     ? new OpenAI({
@@ -81,16 +66,33 @@ export async function POST(req: NextRequest) {
 
   const model = useAzure ? azureDeployment : 'gpt-4o';
 
-  const stream = await client.chat.completions.create({
-    model,
-    stream: true,
-    temperature: 0.5,
-    max_tokens: 1024,
-    messages: [
-      { role: 'system', content: SYSTEM_PROMPT },
-      ...recentMessages,
-    ],
-  });
+  const createStream = () =>
+    client.chat.completions.create(
+      {
+        model,
+        stream: true,
+        temperature: 0.5,
+        max_tokens: 1024,
+        messages: [
+          { role: 'system' as const, content: SYSTEM_PROMPT },
+          ...validation.value,
+        ],
+      },
+      { signal: req.signal },
+    );
+  let stream: Awaited<ReturnType<typeof createStream>>;
+  try {
+    stream = await createStream();
+  } catch (error) {
+    console.error('[AI chat] provider request failed:', error);
+    const status = (error as { status?: number }).status === 429 ? 429 : 502;
+    return textResponse(
+      status === 429
+        ? 'AI provider rate limit reached. Try again shortly.'
+        : 'AI provider request failed. Try again later.',
+      status,
+    );
+  }
 
   const encoder = new TextEncoder();
   const readable = new ReadableStream({
@@ -100,8 +102,9 @@ export async function POST(req: NextRequest) {
           const delta = chunk.choices[0]?.delta?.content;
           if (delta) controller.enqueue(encoder.encode(delta));
         }
-      } finally {
         controller.close();
+      } catch (error) {
+        controller.error(error);
       }
     },
     cancel() {
@@ -110,6 +113,9 @@ export async function POST(req: NextRequest) {
   });
 
   return new Response(readable, {
-    headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+    headers: {
+      'Content-Type': 'text/plain; charset=utf-8',
+      ...RESPONSE_HEADERS,
+    },
   });
 }

@@ -48,6 +48,22 @@ export interface FredReleaseDate {
 
 export type ObservationRange = '1y' | '5y' | '10y' | 'max';
 
+export const OBSERVATION_RANGES: readonly ObservationRange[] = [
+  '1y',
+  '5y',
+  '10y',
+  'max',
+];
+
+export function parseObservationRange(
+  value: string | null | undefined,
+  fallback: ObservationRange = '5y',
+): ObservationRange {
+  return OBSERVATION_RANGES.includes(value as ObservationRange)
+    ? (value as ObservationRange)
+    : fallback;
+}
+
 // ─── Transformations ───────────────────────────────────────────────────────────
 // FRED applies these server-side via the `units`, `frequency` and
 // `aggregation_method` parameters on /series/observations.
@@ -206,6 +222,8 @@ export interface ObservationOptions {
   units?: FredUnits;
   frequency?: FredFrequency;
   aggregation?: FredAggregation;
+  /** Return only the most recent N observations, in chronological order. */
+  maxObservations?: number;
 }
 
 // ─── Internal fetch helper ──────────────────────────────────────────────────────
@@ -231,13 +249,21 @@ async function fredFetch<T>(
 
 // ─── Observation date range helpers ────────────────────────────────────────────
 
-function rangeToStartDate(range: ObservationRange): string | undefined {
+export function observationStartDate(
+  range: ObservationRange,
+  now = new Date(),
+): string | undefined {
   if (range === 'max') return undefined;
-  const d = new Date();
-  if (range === '1y')  d.setFullYear(d.getFullYear() - 1);
-  if (range === '5y')  d.setFullYear(d.getFullYear() - 5);
-  if (range === '10y') d.setFullYear(d.getFullYear() - 10);
-  return d.toISOString().split('T')[0];
+  const years = range === '1y' ? 1 : range === '5y' ? 5 : 10;
+  const targetYear = now.getUTCFullYear() - years;
+  const month = now.getUTCMonth();
+  const lastDay = new Date(Date.UTC(targetYear, month + 1, 0)).getUTCDate();
+  const day = Math.min(now.getUTCDate(), lastDay);
+  return [
+    String(targetYear).padStart(4, '0'),
+    String(month + 1).padStart(2, '0'),
+    String(day).padStart(2, '0'),
+  ].join('-');
 }
 
 /**
@@ -290,10 +316,16 @@ export async function getObservations(
   options: ObservationOptions = {},
 ) {
   const units = options.units ?? 'lin';
+  const maxObservations =
+    Number.isInteger(options.maxObservations) &&
+    options.maxObservations! > 0 &&
+    options.maxObservations! <= 100_000
+      ? options.maxObservations
+      : undefined;
   const params: Record<string, string> = {
     series_id: seriesId,
-    sort_order: 'asc',
-    limit: '100000',
+    sort_order: maxObservations ? 'desc' : 'asc',
+    limit: String(maxObservations ?? 100_000),
     units,
   };
 
@@ -302,7 +334,7 @@ export async function getObservations(
     params.aggregation_method = options.aggregation ?? 'avg';
   }
 
-  const start = rangeToStartDate(range);
+  const start = observationStartDate(range);
   if (start) {
     params.observation_start = needsLookback(units) ? padStartDate(start) : start;
   }
@@ -312,12 +344,18 @@ export async function getObservations(
     params,
   );
 
+  let observations = maxObservations
+    ? [...data.observations].reverse()
+    : data.observations;
+
   // Trim the padding back off so callers get exactly the window they asked for.
   if (start && params.observation_start !== start) {
-    const observations = data.observations.filter((o) => o.date >= start);
+    observations = observations.filter((o) => o.date >= start);
     return { ...data, observations, count: observations.length };
   }
-  return data;
+  return maxObservations
+    ? { ...data, observations, count: observations.length }
+    : data;
 }
 
 // ─── Categories ────────────────────────────────────────────────────────────────

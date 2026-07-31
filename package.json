@@ -6,29 +6,31 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "test": "node --experimental-strip-types --test tests/core.test.mjs",
+    "check:secrets": "node scripts/check-secrets.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.90.21",
-    "openai": "^4.98.0",
     "chart.js": "^4.5.1",
     "chartjs-adapter-date-fns": "^3.0.0",
     "date-fns": "^4.1.0",
     "lucide-react": "^0.577.0",
-    "next": "16.1.7",
+    "next": "16.2.11",
     "openai": "^6.32.0",
     "react": "19.2.3",
     "react-chartjs-2": "^5.3.1",
     "react-dom": "19.2.3"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4",
+    "@tailwindcss/postcss": "4.1.18",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "16.1.7",
-    "tailwindcss": "^4",
+    "eslint-config-next": "16.2.11",
+    "tailwindcss": "4.1.18",
     "typescript": "^5"
   }
 }

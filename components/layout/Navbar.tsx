@@ -70,12 +70,18 @@ export function Navbar() {
 
         {/* Search — hidden on /search since that page has its own full search bar */}
         {!pathname.startsWith('/search') && (
-        <form onSubmit={handleSearch} className="flex-1 max-w-sm relative">
+        <form
+          onSubmit={handleSearch}
+          className="flex-1 max-w-sm relative"
+          role="search"
+          aria-label="Search FRED series"
+        >
           <Search
             className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4"
             style={{ color: 'var(--text-muted)' }}
           />
           <input
+            aria-label="Search economic series"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search economic series…"
@@ -92,7 +98,7 @@ export function Navbar() {
         )}
 
         {/* Desktop nav */}
-        <nav className="hidden md:flex items-center gap-0.5 ml-2">
+        <nav className="hidden xl:flex items-center gap-0.5 ml-2" aria-label="Primary">
           {NAV.map(({ href, label, icon: Icon }) => {
             const active =
               href === '/' ? pathname === '/' : pathname.startsWith(href);
@@ -100,6 +106,7 @@ export function Navbar() {
               <Link
                 key={href}
                 href={href}
+                aria-current={active ? 'page' : undefined}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors"
                 style={{
                   background: active ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'transparent',
@@ -126,7 +133,8 @@ export function Navbar() {
 
       {/* Mobile nav */}
       <div
-        className="md:hidden flex border-t overflow-x-auto"
+        className="xl:hidden flex border-t overflow-x-auto"
+        aria-label="Primary"
         style={{ borderColor: 'var(--border)' }}
       >
         {NAV.map(({ href, label, icon: Icon }) => {
@@ -136,6 +144,7 @@ export function Navbar() {
             <Link
               key={href}
               href={href}
+              aria-current={active ? 'page' : undefined}
               className="flex flex-col items-center gap-0.5 px-4 py-2 text-xs font-medium flex-1 whitespace-nowrap"
               style={{ color: active ? 'var(--accent)' : 'var(--text-muted)' }}
             >

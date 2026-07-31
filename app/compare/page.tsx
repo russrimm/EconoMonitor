@@ -6,6 +6,7 @@ import { ChevronDown, Loader2, Pin, Search, X } from 'lucide-react';
 import { useMultiObservations, useMultiSeries, useSeriesSearch } from '@/hooks/useFredQuery';
 import { usePinnedSeries } from '@/hooks/usePinnedSeries';
 import { CompareChart, type CompareDataset } from '@/components/charts/CompareChart';
+import { ChartDataTable } from '@/components/charts/ChartDataTable';
 import { ExportButton } from '@/components/ExportButton';
 import { TransformControls } from '@/components/controls/TransformControls';
 import { NormalizeControl } from '@/components/controls/NormalizeControl';
@@ -15,6 +16,7 @@ import {
   TRANSFORM_MAP,
   transformSuffix,
   transformedUnits,
+  parseObservationRange,
   type FredUnits,
   type ObservationRange,
 } from '@/lib/fred';
@@ -22,6 +24,8 @@ import {
   NORMALIZE_MAP,
   applyNormalization,
   isSharedAxis,
+  normalizationIssue,
+  normalizedUnits,
   type NormalizeMode,
 } from '@/lib/transform';
 import type { AnalyzeDataset } from '@/lib/ai';
@@ -62,10 +66,10 @@ function ComparePageInner() {
   const selectedIds = (searchParams.get('ids') ?? '')
     .split(',')
     .map((s) => s.trim())
-    .filter(Boolean)
+    .filter((id) => /^[A-Z0-9_-]{1,30}$/.test(id))
     .slice(0, MAX_SERIES);
 
-  const range = (searchParams.get('range') ?? '5y') as ObservationRange;
+  const range = parseObservationRange(searchParams.get('range'));
 
   const unitsParam = searchParams.get('units') ?? 'lin';
   const units = (VALID_UNITS.has(unitsParam) ? unitsParam : 'lin') as FredUnits;
@@ -100,21 +104,29 @@ function ComparePageInner() {
 
   // Build compare datasets: FRED transform first (server-side, changes what the
   // series measures), then normalization (client-side, changes only its scale).
+  const normalizationWarnings: string[] = [];
   const datasets: CompareDataset[] = selectedIds
     .map((id, i) => {
       const meta = metaResults[i]?.data?.seriess?.[0];
       const obs = obsResults[i]?.data?.observations ?? [];
       if (!meta) return null;
+      const issue = normalizationIssue(obs, normalize);
+      if (issue) normalizationWarnings.push(`${id}: ${issue}`);
+      const normalizedObservations = applyNormalization(obs, normalize);
+      if (normalizedObservations.length === 0) return null;
       return {
         seriesId: id,
         label: `${meta.title}${transformSuffix(units)}`,
         units: transformedUnits(meta.units_short, units),
-        observations: applyNormalization(obs, normalize),
+        observations: normalizedObservations,
       };
     })
     .filter(Boolean) as CompareDataset[];
 
-  const isLoadingAny = obsResults.some((r) => r.isLoading);
+  const isLoadingAny = [...metaResults, ...obsResults].some((r) => r.isLoading);
+  const failedIds = selectedIds.filter(
+    (_, index) => metaResults[index]?.isError || obsResults[index]?.isError,
+  );
 
   const sharedAxisLabel = isSharedAxis(normalize)
     ? NORMALIZE_MAP[normalize].axisLabel
@@ -200,6 +212,7 @@ function ComparePageInner() {
                 : 'Search to add a series…'
             }
             disabled={selectedIds.length >= MAX_SERIES}
+            aria-label="Search for a FRED series to compare"
             className="w-full pl-9 pr-16 py-2 text-sm rounded-xl focus:outline-none focus:ring-2 disabled:opacity-50"
             style={{
               background: 'var(--surface)',
@@ -354,6 +367,7 @@ function ComparePageInner() {
               <button
                 key={value}
                 onClick={() => setRange(value)}
+                aria-pressed={range === value}
                 className="px-3 py-1 rounded-md text-sm font-medium transition-colors"
                 style={{
                   background: range === value ? 'var(--accent)' : 'var(--surface)',
@@ -389,6 +403,40 @@ function ComparePageInner() {
             {NORMALIZE_MAP[normalize].description}
           </p>
         )}
+        {normalizationWarnings.length > 0 && (
+          <div
+            className="rounded-lg px-3 py-2 text-xs"
+            role="alert"
+            style={{
+              color: 'var(--red)',
+              background: 'color-mix(in srgb, var(--red) 10%, transparent)',
+            }}
+          >
+            {normalizationWarnings.join(' ')}
+          </div>
+        )}
+        {failedIds.length > 0 && (
+          <div
+            className="flex items-center justify-between gap-3 rounded-lg px-3 py-2 text-xs"
+            role="alert"
+            style={{
+              color: 'var(--red)',
+              background: 'color-mix(in srgb, var(--red) 10%, transparent)',
+            }}
+          >
+            <span>Could not load: {failedIds.join(', ')}.</span>
+            <button
+              onClick={() => {
+                for (const result of [...metaResults, ...obsResults]) {
+                  if (result.isError) void result.refetch();
+                }
+              }}
+              className="font-medium underline"
+            >
+              Retry
+            </button>
+          </div>
+        )}
         <div className="h-96 relative">
           {isLoadingAny && selectedIds.length > 0 ? (
             <div
@@ -406,10 +454,19 @@ function ComparePageInner() {
             />
           )}
         </div>
+        {!isLoadingAny && datasets.length > 0 && (
+          <ChartDataTable
+            title="Comparison chart data"
+            datasets={datasets.map((dataset) => ({
+              ...dataset,
+              units: normalizedUnits(dataset.units, normalize),
+            }))}
+          />
+        )}
       </div>
 
       {/* AI Insights */}
-      {datasets.length > 0 && (
+      {!isLoadingAny && datasets.length > 0 && (
         <InsightsPanel
           datasets={datasets.map((d): AnalyzeDataset => ({
             seriesId: d.seriesId,
