@@ -3,17 +3,22 @@ import {
   isNewsTopic,
   parseFederalReserveUrl,
   parseGdeltArticle,
-  readLimitedText,
   type NewsArticle,
   type NewsResponse,
   type NewsTopic,
 } from '@/lib/news';
+import {
+  fetchUpstream,
+  logInvalidPayload,
+  logUpstreamSuccess,
+  readLimitedJson,
+  readLimitedText,
+} from '@/lib/upstream';
 
 const GDELT_DOC_API = 'https://api.gdeltproject.org/api/v2/doc/doc';
 const FEDERAL_RESERVE_RSS =
   'https://www.federalreserve.gov/feeds/press_all.xml';
 const CACHE_SECONDS = 15 * 60;
-const UPSTREAM_TIMEOUT_MS = 10_000;
 const MAX_GDELT_BYTES = 512 * 1024;
 const MAX_FED_BYTES = 256 * 1024;
 
@@ -40,34 +45,42 @@ async function fetchGdeltNews(
   gdeltUrl.searchParams.set('sort', 'DateDesc');
   gdeltUrl.searchParams.set('timespan', '3days');
 
-  const upstream = await fetch(gdeltUrl, {
+  const upstream = await fetchUpstream(gdeltUrl, {
     headers: { Accept: 'application/json' },
-    next: { revalidate: CACHE_SECONDS },
+    cache: 'no-store',
     signal,
+  }, {
+    service: 'gdelt',
+    operation: 'article-list',
+    timeoutMs: 10_000,
+    cachePolicy: 'no-store',
   });
 
   if (!upstream.ok) {
     throw new Error(`upstream returned ${upstream.status}`);
   }
 
-  const contentType = upstream.headers.get('content-type') ?? '';
-  if (!contentType.includes('json')) {
-    throw new Error('upstream response was not JSON');
-  }
-  const text = await readLimitedText(upstream, MAX_GDELT_BYTES);
-  const data: unknown = JSON.parse(text);
+  const data = await readLimitedJson(upstream, MAX_GDELT_BYTES);
   if (
     typeof data !== 'object' ||
     data === null ||
     !Array.isArray((data as { articles?: unknown }).articles)
   ) {
+    logInvalidPayload(upstream);
     throw new Error('upstream response did not contain articles');
   }
 
-  return (data as { articles: unknown[] }).articles
+  const sourceArticles = (data as { articles: unknown[] }).articles;
+  const articles = sourceArticles
     .slice(0, 100)
     .map(parseGdeltArticle)
     .filter((article): article is NewsArticle => article !== null);
+  if (sourceArticles.length > 0 && articles.length === 0) {
+    logInvalidPayload(upstream);
+    throw new Error('upstream articles were malformed');
+  }
+  logUpstreamSuccess(upstream);
+  return articles;
 }
 
 function decodeXml(value: string): string {
@@ -93,10 +106,15 @@ function extractXmlText(xml: string, tag: string): string | null {
 }
 
 async function fetchFederalReserveNews(signal: AbortSignal): Promise<NewsArticle[]> {
-  const upstream = await fetch(FEDERAL_RESERVE_RSS, {
+  const upstream = await fetchUpstream(FEDERAL_RESERVE_RSS, {
     headers: { Accept: 'application/rss+xml, application/xml' },
-    next: { revalidate: CACHE_SECONDS },
+    cache: 'no-store',
     signal,
+  }, {
+    service: 'federal_reserve',
+    operation: 'press-release-feed',
+    timeoutMs: 10_000,
+    cachePolicy: 'no-store',
   });
 
   if (!upstream.ok) {
@@ -105,10 +123,16 @@ async function fetchFederalReserveNews(signal: AbortSignal): Promise<NewsArticle
 
   const contentType = upstream.headers.get('content-type') ?? '';
   if (!/(xml|rss)/i.test(contentType)) {
+    logInvalidPayload(upstream);
     throw new Error('upstream response was not XML');
   }
   const xml = await readLimitedText(upstream, MAX_FED_BYTES);
-  return [...xml.matchAll(/<item>([\s\S]*?)<\/item>/gi)]
+  if (!/<rss[\s>]/i.test(xml) || !/<channel[\s>]/i.test(xml)) {
+    logInvalidPayload(upstream);
+    throw new Error('upstream response was not an RSS feed');
+  }
+  const sourceItems = [...xml.matchAll(/<item>([\s\S]*?)<\/item>/gi)];
+  const articles = sourceItems
     .map((match): NewsArticle | null => {
       const title = extractXmlText(match[1], 'title');
       const link = extractXmlText(match[1], 'link');
@@ -128,6 +152,12 @@ async function fetchFederalReserveNews(signal: AbortSignal): Promise<NewsArticle
       };
     })
     .filter((article): article is NewsArticle => article !== null);
+  if (sourceItems.length > 0 && articles.length === 0) {
+    logInvalidPayload(upstream);
+    throw new Error('upstream feed items were malformed');
+  }
+  logUpstreamSuccess(upstream);
+  return articles;
 }
 
 function deduplicateAndSort(articles: NewsArticle[]): NewsArticle[] {
@@ -155,24 +185,13 @@ function deduplicateAndSort(articles: NewsArticle[]): NewsArticle[] {
 export async function GET(request: NextRequest) {
   const requestedTopic = request.nextUrl.searchParams.get('topic');
   const topic = isNewsTopic(requestedTopic) ? requestedTopic : 'all';
-  const signal = AbortSignal.any([
-    request.signal,
-    AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
-  ]);
   const includeFed = topic === 'all' || topic === 'economy';
   const [gdeltResult, fedResult] = await Promise.allSettled([
-    fetchGdeltNews(topic, signal),
+    fetchGdeltNews(topic, request.signal),
     includeFed
-      ? fetchFederalReserveNews(signal)
+      ? fetchFederalReserveNews(request.signal)
       : Promise.resolve<NewsArticle[]>([]),
   ]);
-
-  if (gdeltResult.status === 'rejected') {
-    console.error('[GDELT news] fetch failed:', gdeltResult.reason);
-  }
-  if (includeFed && fedResult.status === 'rejected') {
-    console.error('[Federal Reserve news] fetch failed:', fedResult.reason);
-  }
 
   if (
     gdeltResult.status === 'rejected' &&
@@ -206,7 +225,9 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json(response, {
     headers: {
-      'Cache-Control': 'no-store',
+      'Cache-Control': response.partial
+        ? 'no-store'
+        : `public, s-maxage=${CACHE_SECONDS}, stale-while-revalidate=60`,
     },
   });
 }

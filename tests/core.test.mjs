@@ -37,8 +37,18 @@ import {
   parseFederalReserveUrl,
   parseGdeltArticle,
   parseGdeltDate,
-  readLimitedText,
 } from '../lib/news.ts';
+import {
+  fetchUpstream,
+  logUpstreamSuccess,
+  readLimitedJson as readLimitedUpstreamJson,
+  readLimitedText,
+} from '../lib/upstream.ts';
+import {
+  isIsoDate as isValidUpstreamDate,
+  validateFraserPayload,
+  validateFredPayload,
+} from '../lib/upstreamSchemas.ts';
 import { datasetsToCSV } from '../lib/utils.ts';
 import { scanText } from '../scripts/check-secrets.mjs';
 
@@ -193,6 +203,45 @@ test('limited JSON parsing enforces declared and streamed body sizes', async () 
   assert.deepEqual(parsed, { ok: true });
 });
 
+test('upstream observability emits one terminal payload-free event', async () => {
+  const originalFetch = globalThis.fetch;
+  const originalInfo = console.info;
+  const events = [];
+  globalThis.fetch = async () =>
+    new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  console.info = (message) => events.push(JSON.parse(message));
+
+  try {
+    const response = await fetchUpstream(
+      new URL('https://example.test/private?query=do-not-log'),
+      { cache: 'no-store' },
+      {
+        service: 'fred',
+        operation: 'series',
+        timeoutMs: 1_000,
+        cachePolicy: 'no-store',
+      },
+    );
+    assert.equal(events.length, 0);
+    assert.deepEqual(await readLimitedUpstreamJson(response, 100), { ok: true });
+    assert.equal(events.length, 0);
+
+    logUpstreamSuccess(response);
+    logUpstreamSuccess(response);
+    assert.equal(events.length, 1);
+    assert.equal(events[0].outcome, 'success');
+    assert.equal(events[0].cacheOutcome, 'bypass');
+    assert.equal(JSON.stringify(events[0]).includes('do-not-log'), false);
+    assert.equal(Object.hasOwn(events[0], 'payload'), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+    console.info = originalInfo;
+  }
+});
+
 test('formula parser supports negative exponents without changing unary precedence', () => {
   const row = [{ date: '2024-01-01', values: { A: 1, B: 1, C: 1, D: 1 } }];
   assert.equal(evaluateAcrossDates(compileFormula('-2^2'), row)[0].value, -4);
@@ -260,6 +309,120 @@ test('news parsing rejects malformed dates, records, and deceptive links', async
       ),
     /size limit/,
   );
+});
+
+test('FRED success payload validation rejects malformed 200 responses', async () => {
+  const series = {
+    id: 'GDP',
+    title: 'Gross Domestic Product',
+    frequency: 'Quarterly',
+    frequency_short: 'Q',
+    units: 'Billions of Dollars',
+    units_short: 'Bil. of $',
+    seasonal_adjustment: 'Seasonally Adjusted Annual Rate',
+    seasonal_adjustment_short: 'SAAR',
+    observation_start: '1947-01-01',
+    observation_end: '2026-04-01',
+    last_updated: '2026-07-30 07:55:01-05',
+    popularity: 90,
+  };
+  const validPayloads = new Map([
+    ['series', { seriess: [series] }],
+    ['series/search', { seriess: [series], count: 1, offset: 0, limit: 20 }],
+    ['category/series', { seriess: [series], count: 1, offset: 0, limit: 20 }],
+    ['series/observations', {
+      observations: [
+        { date: '2026-04-01', value: '31234.5' },
+        { date: '2026-07-01', value: '.' },
+      ],
+      count: 2,
+    }],
+    ['category', { categories: [{ id: 1, name: 'Money', parent_id: 0 }] }],
+    ['category/children', { categories: [{ id: 1, name: 'Money', parent_id: 0 }] }],
+    ['releases', {
+      releases: [{ id: 1, name: 'GDP', press_release: true }],
+      count: 1,
+      offset: 0,
+      limit: 50,
+    }],
+    ['releases/dates', {
+      release_dates: [{ release_id: 1, release_name: 'GDP', date: '2026-08-01' }],
+    }],
+  ]);
+  for (const [path, payload] of validPayloads) {
+    assert.equal(validateFredPayload(path, payload), true, path);
+  }
+
+  const malformed200 = new Response(
+    JSON.stringify({ observations: [{ date: '2026-02-30', value: null }], count: 1 }),
+    { status: 200, headers: { 'content-type': 'application/json' } },
+  );
+  const malformedPayload = await readLimitedUpstreamJson(malformed200, 1024);
+  assert.equal(
+    validateFredPayload('series/observations', malformedPayload),
+    false,
+  );
+});
+
+test('FRASER success payload validation rejects malformed 200 responses', async () => {
+  const envelope = (records) => ({
+    format: 'json',
+    page: 1,
+    limit: 20,
+    total: records.length,
+    start: 1,
+    records,
+  });
+  const recordInfo = { recordIdentifier: ['123'], recordType: 'title' };
+  const theme = {
+    titleInfo: [{ title: 'Banking' }],
+    recordInfo,
+    location: { url: ['https://fraser.stlouisfed.org/theme/1'] },
+  };
+  const record = {
+    titleInfo: [{ title: 'Annual Report' }],
+    recordInfo,
+    location: { pdfUrl: ['https://fraser.stlouisfed.org/files/report.pdf'] },
+  };
+  const timeline = {
+    id: 'timeline-1',
+    url: 'https://fraser.stlouisfed.org/timeline/1',
+    title: 'Financial History',
+  };
+  const event = {
+    title: 'Policy event',
+    date: '2026-03-01',
+    location: { url: ['https://fraser.stlouisfed.org/event/1'] },
+  };
+
+  assert.equal(validateFraserPayload('theme', envelope([theme])), true);
+  assert.equal(validateFraserPayload('theme/1', envelope([theme])), true);
+  assert.equal(validateFraserPayload('theme/1/records', envelope([record])), true);
+  assert.equal(validateFraserPayload('timeline', envelope([timeline])), true);
+  assert.equal(validateFraserPayload('timeline/1', envelope([timeline])), true);
+  assert.equal(validateFraserPayload('timeline/1/events', envelope([event])), true);
+  assert.equal(validateFraserPayload('title/1', envelope([record])), true);
+  assert.equal(validateFraserPayload('title/1/items', envelope([record])), true);
+  assert.equal(validateFraserPayload('item/1', envelope([record])), true);
+
+  const malformed200 = new Response(
+    JSON.stringify(envelope([{
+      titleInfo: [{ title: 'Unsafe record' }],
+      recordInfo,
+      location: { pdfUrl: ['javascript:alert(1)'] },
+    }])),
+    { status: 200, headers: { 'content-type': 'application/json' } },
+  );
+  const malformedPayload = await readLimitedUpstreamJson(malformed200, 2048);
+  assert.equal(validateFraserPayload('title/1', malformedPayload), false);
+});
+
+test('upstream date validation is UTC-safe at month, leap-day, and DST boundaries', () => {
+  assert.equal(isValidUpstreamDate('2024-02-29'), true);
+  assert.equal(isValidUpstreamDate('2023-02-29'), false);
+  assert.equal(isValidUpstreamDate('2026-04-31'), false);
+  assert.equal(isValidUpstreamDate('2026-03-08'), true);
+  assert.equal(isValidUpstreamDate('2026-11-01'), true);
 });
 
 test('multi-series CSV exports preserve series identity and units', () => {

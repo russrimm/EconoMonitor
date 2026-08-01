@@ -485,11 +485,31 @@ History was intentionally not rewritten.
 
 ### Remaining Next.js transitive advisories
 
-`npm audit --omit=dev` reports three high-severity transitive advisories in the
-versions of `postcss` and `sharp` bundled by the current stable Next.js release.
-At audit time, npm offered only `next@16.3.0-preview.9` as a resolution. A
-preview framework upgrade was intentionally rejected. Upgrade to the next
-patched stable Next.js release after compatibility validation.
+`npm audit --omit=dev` reports three high-severity vulnerable-package entries:
+`postcss`, `sharp`, and their parent `next`. The `next` entry aggregates the
+transitive findings rather than adding an independent vulnerability.
+
+- PostCSS
+  [GHSA-qx2v-qp2m-jg93](https://github.com/advisories/GHSA-qx2v-qp2m-jg93),
+  [GHSA-6g55-p6wh-862q](https://github.com/advisories/GHSA-6g55-p6wh-862q),
+  and
+  [GHSA-r28c-9q8g-f849](https://github.com/advisories/GHSA-r28c-9q8g-f849)
+  are reachable during the trusted build's Tailwind/PostCSS processing. They
+  are not reachable from an attacker-controlled runtime input: the application
+  has no CSS compilation endpoint, user-authored styles, or uploaded source
+  maps. The current exposure is build-time processing of repository-owned CSS.
+- Sharp
+  [GHSA-f88m-g3jw-g9cj](https://github.com/advisories/GHSA-f88m-g3jw-g9cj)
+  is present through Next.js image optimization, but the application imports
+  neither `next/image` nor `sharp`, configures no remote image sources, and has
+  no image-upload path. The framework image route may load Sharp for a
+  repository-owned local asset, but no current application path supplies the
+  attacker-controlled image required to exploit the inherited libvips flaws.
+
+At the second follow-up audit, npm still offered only
+`next@16.3.0-preview.9` as a resolution. A preview framework upgrade was
+intentionally rejected. Upgrade to the next patched stable Next.js release
+after compatibility validation.
 
 ### Distributed AI abuse controls
 
