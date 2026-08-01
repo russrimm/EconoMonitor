@@ -11,7 +11,9 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test tests/core.test.mjs",
+    "test": "npm run test:core && npm run test:a11y",
+    "test:core": "node --experimental-strip-types --test tests/core.test.mjs",
+    "test:a11y": "playwright test",
     "check:secrets": "node scripts/check-secrets.mjs"
   },
   "dependencies": {
@@ -27,6 +29,8 @@
     "react-dom": "19.2.3"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.12.1",
+    "@playwright/test": "^1.62.0",
     "@tailwindcss/postcss": "4.1.18",
     "@types/node": "^20",
     "@types/react": "^19",

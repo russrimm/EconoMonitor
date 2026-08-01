@@ -13,6 +13,7 @@ import { ArrowUpDown, ChevronRight, Folder, LayoutGrid, Loader2, Search } from '
 import { useCategoryChildren, useSeriesSearch } from '@/hooks/useFredQuery';
 import { usePinnedSeries } from '@/hooks/usePinnedSeries';
 import { SeriesCard } from '@/components/search/SeriesCard';
+import { QueryError } from '@/components/QueryError';
 
 const PAGE_SIZE = 20;
 
@@ -163,7 +164,11 @@ function SearchPageInner() {
     debouncedQuery === urlQuery ? (urlPage - 1) * PAGE_SIZE : 0;
 
   const { toggle, isPinned } = usePinnedSeries();
-  const { data, isLoading, isFetching, error } = useSeriesSearch(debouncedQuery, offset, orderBy);
+  const { data, isLoading, isFetching, error, refetch } = useSeriesSearch(
+    debouncedQuery,
+    offset,
+    orderBy,
+  );
 
   const replaceSearchUrl = useCallback(
     (
@@ -285,12 +290,10 @@ function SearchPageInner() {
 
       {/* Error */}
       {error && (
-        <div
-          className="rounded-xl px-4 py-3 text-sm"
-          style={{ background: 'color-mix(in srgb, var(--red) 10%, transparent)', color: 'var(--red)', border: '1px solid color-mix(in srgb, var(--red) 30%, transparent)' }}
-        >
-          {error.message}
-        </div>
+        <QueryError
+          message={error.message}
+          onRetry={() => void refetch()}
+        />
       )}
 
       {/* Browse by topic when no query */}

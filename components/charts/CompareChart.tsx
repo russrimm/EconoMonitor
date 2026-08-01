@@ -154,6 +154,8 @@ export function CompareChart({ datasets, sharedAxisLabel = null, baseline = null
 
   return (
     <Line
+      role="img"
+      aria-label={`Comparison chart for ${datasets.map((dataset) => dataset.label).join(', ')}`}
       data={{ datasets: chartDatasets }}
       options={{
         responsive: true,

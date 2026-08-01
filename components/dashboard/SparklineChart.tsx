@@ -16,9 +16,10 @@ ChartJS.register(LineElement, PointElement, LinearScale, TimeScale, Filler);
 interface Props {
   observations: { date: string; value: string }[];
   color: string;
+  label: string;
 }
 
-export function SparklineChart({ observations, color }: Props) {
+export function SparklineChart({ observations, color, label }: Props) {
   const points = observations
     .filter((o) => o.value !== '.' && o.value !== '')
     .slice(-80)
@@ -30,6 +31,8 @@ export function SparklineChart({ observations, color }: Props) {
 
   return (
     <Line
+      role="img"
+      aria-label={`${label} recent trend chart`}
       data={{
         datasets: [
           {

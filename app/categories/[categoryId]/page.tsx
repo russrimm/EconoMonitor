@@ -11,6 +11,7 @@ import {
 } from '@/hooks/useFredQuery';
 import { usePinnedSeries } from '@/hooks/usePinnedSeries';
 import { SeriesCard } from '@/components/search/SeriesCard';
+import { QueryError } from '@/components/QueryError';
 
 export default function CategoryDetailPage() {
   const { categoryId } = useParams<{ categoryId: string }>();
@@ -21,9 +22,13 @@ export default function CategoryDetailPage() {
 
   const { toggle, isPinned } = usePinnedSeries();
 
-  const { data: catData } = useCategory(id);
-  const { data: childrenData } = useCategoryChildren(id);
-  const { data: seriesData, isLoading: seriesLoading } = useCategorySeries(id, offset);
+  const categoryQuery = useCategory(id);
+  const childrenQuery = useCategoryChildren(id);
+  const seriesQuery = useCategorySeries(id, offset);
+  const catData = categoryQuery.data;
+  const childrenData = childrenQuery.data;
+  const seriesData = seriesQuery.data;
+  const seriesLoading = seriesQuery.isLoading;
 
   const category = catData?.categories?.[0];
   const children = childrenData?.categories ?? [];
@@ -80,6 +85,17 @@ export default function CategoryDetailPage() {
         )}
       </div>
 
+      {(categoryQuery.isError || childrenQuery.isError || seriesQuery.isError) && (
+        <QueryError
+          message="Some category data could not be loaded."
+          onRetry={() => {
+            if (categoryQuery.isError) void categoryQuery.refetch();
+            if (childrenQuery.isError) void childrenQuery.refetch();
+            if (seriesQuery.isError) void seriesQuery.refetch();
+          }}
+        />
+      )}
+
       {/* Sub-categories */}
       {children.length > 0 && (
         <section>
@@ -132,7 +148,7 @@ export default function CategoryDetailPage() {
       )}
 
       {/* Series list */}
-      {(seriesLoading || seriess.length > 0) && (
+      {(seriesLoading || seriess.length > 0) && !seriesQuery.isError && (
         <section>
           <h2 className="font-semibold text-sm mb-3" style={{ color: 'var(--text)' }}>
             Series in this Category

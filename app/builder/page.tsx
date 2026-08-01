@@ -208,7 +208,7 @@ export default function BuilderPage() {
             className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium"
             style={{
               background: 'color-mix(in srgb, var(--accent) 12%, transparent)',
-              color: 'var(--accent)',
+              color: 'var(--accent-hover)',
               border: '1px solid color-mix(in srgb, var(--accent) 30%, transparent)',
             }}
           >
@@ -223,7 +223,7 @@ export default function BuilderPage() {
             >
               <div
                 className="px-3 py-2 text-xs font-medium uppercase tracking-wide"
-                style={{ background: 'var(--surface-2)', color: 'var(--text-muted)', borderBottom: '1px solid var(--border)' }}
+                style={{ background: 'var(--surface-2)', color: 'var(--text)', borderBottom: '1px solid var(--border)' }}
               >
                 Saved
               </div>
@@ -264,7 +264,7 @@ export default function BuilderPage() {
           >
             <div
               className="px-3 py-2 text-xs font-medium uppercase tracking-wide"
-              style={{ background: 'var(--surface-2)', color: 'var(--text-muted)', borderBottom: '1px solid var(--border)' }}
+              style={{ background: 'var(--surface-2)', color: 'var(--text)', borderBottom: '1px solid var(--border)' }}
             >
               Templates
             </div>

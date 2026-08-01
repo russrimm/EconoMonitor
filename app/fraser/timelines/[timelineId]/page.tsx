@@ -11,6 +11,7 @@ import {
   extractUrl,
   type FraserTimelineEvent,
 } from '@/lib/fraser';
+import { QueryError } from '@/components/QueryError';
 
 function EventCard({ event, index }: { event: FraserTimelineEvent; index: number }) {
   const title = getEventTitle(event);
@@ -21,7 +22,9 @@ function EventCard({ event, index }: { event: FraserTimelineEvent; index: number
   // Format a readable date if it looks like YYYY-MM-DD
   const displayDate = date
     ? (() => {
-        const d = new Date(date);
+        const d = new Date(
+          /^\d{4}-\d{2}-\d{2}$/.test(date) ? `${date}T00:00:00` : date,
+        );
         return isNaN(d.getTime())
           ? date
           : d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
@@ -113,7 +116,12 @@ export default function TimelinePage() {
 
       {/* Header */}
       <div className="flex flex-col gap-2">
-        {timelineQuery.isLoading ? (
+        {timelineQuery.isError ? (
+          <QueryError
+            message="Timeline details could not be loaded."
+            onRetry={() => void timelineQuery.refetch()}
+          />
+        ) : timelineQuery.isLoading ? (
           <div className="h-8 w-72 rounded animate-pulse" style={{ background: 'var(--surface)' }} />
         ) : (
           <>
@@ -140,16 +148,10 @@ export default function TimelinePage() {
 
       {/* Error */}
       {eventsQuery.error && (
-        <div
-          className="rounded-xl px-4 py-3 text-sm"
-          style={{
-            background: 'color-mix(in srgb, var(--red) 10%, transparent)',
-            color: 'var(--red)',
-            border: '1px solid color-mix(in srgb, var(--red) 30%, transparent)',
-          }}
-        >
-          Failed to load timeline events.
-        </div>
+        <QueryError
+          message="Timeline events could not be loaded."
+          onRetry={() => void eventsQuery.refetch()}
+        />
       )}
 
       {/* Events count */}
@@ -170,7 +172,7 @@ export default function TimelinePage() {
             />
           ))}
         </div>
-      ) : (
+      ) : !eventsQuery.isError ? (
         <div className="flex flex-col">
           {events.map((event, i) => (
             <EventCard key={i} event={event} index={i} />
@@ -181,7 +183,7 @@ export default function TimelinePage() {
             </p>
           )}
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

@@ -8,6 +8,7 @@ import {
   NEWS_TOPICS,
   type NewsTopic,
 } from '@/lib/news';
+import { QueryError } from '@/components/QueryError';
 
 const TOPIC_LABELS: Record<NewsTopic, string> = {
   all: 'Top stories',
@@ -92,7 +93,7 @@ export default function NewsPage() {
                 border: active
                   ? '1px solid color-mix(in srgb, var(--accent) 35%, transparent)'
                   : '1px solid var(--border)',
-                color: active ? 'var(--accent)' : 'var(--text-muted)',
+                color: active ? 'var(--accent-hover)' : 'var(--text-muted)',
               }}
             >
               {TOPIC_LABELS[value]}
@@ -102,19 +103,14 @@ export default function NewsPage() {
       </div>
 
       {error && (
-        <div
-          className="rounded-xl px-4 py-3 text-sm"
-          role="alert"
-          style={{
-            background: 'color-mix(in srgb, var(--red) 10%, transparent)',
-            border: '1px solid color-mix(in srgb, var(--red) 30%, transparent)',
-            color: 'var(--red)',
-          }}
-        >
-          {error instanceof Error
-            ? error.message
-            : 'Failed to load financial news.'}
-        </div>
+        <QueryError
+          message={
+            error instanceof Error
+              ? error.message
+              : 'Financial news could not be loaded.'
+          }
+          onRetry={() => void refetch()}
+        />
       )}
 
       {data?.partial && (

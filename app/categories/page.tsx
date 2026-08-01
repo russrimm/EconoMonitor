@@ -3,12 +3,13 @@
 import Link from 'next/link';
 import { ChevronRight, Folder } from 'lucide-react';
 import { useCategoryChildren } from '@/hooks/useFredQuery';
+import { QueryError } from '@/components/QueryError';
 
 // FRED root category ID is 0
 const ROOT_ID = 0;
 
 export default function CategoriesPage() {
-  const { data, isLoading, error } = useCategoryChildren(ROOT_ID);
+  const { data, isLoading, error, refetch } = useCategoryChildren(ROOT_ID);
 
   return (
     <div className="flex flex-col gap-6">
@@ -22,16 +23,10 @@ export default function CategoriesPage() {
       </div>
 
       {error && (
-        <div
-          className="rounded-xl px-4 py-3 text-sm"
-          style={{
-            background: 'color-mix(in srgb, var(--red) 10%, transparent)',
-            color: 'var(--red)',
-            border: '1px solid color-mix(in srgb, var(--red) 30%, transparent)',
-          }}
-        >
-          Failed to load categories. Please try again.
-        </div>
+        <QueryError
+          message="Categories could not be loaded."
+          onRetry={() => void refetch()}
+        />
       )}
 
       {isLoading && (

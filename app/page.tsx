@@ -60,7 +60,7 @@ export default function DashboardPage() {
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium"
           style={{
             background: 'color-mix(in srgb, var(--accent) 12%, transparent)',
-            color: 'var(--accent)',
+            color: 'var(--accent-hover)',
             border: '1px solid color-mix(in srgb, var(--accent) 30%, transparent)',
           }}
         >
@@ -146,13 +146,13 @@ export default function DashboardPage() {
                 <tr>
                   <th
                     className="text-left px-4 py-2 font-medium text-xs uppercase tracking-wide"
-                    style={{ color: 'var(--text-muted)' }}
+                    style={{ color: 'var(--text)' }}
                   >
                     Release
                   </th>
                   <th
                     className="text-right px-4 py-2 font-medium text-xs uppercase tracking-wide"
-                    style={{ color: 'var(--text-muted)' }}
+                    style={{ color: 'var(--text)' }}
                   >
                     Date
                   </th>

@@ -230,7 +230,7 @@ function ComparePageInner() {
                 setSearchQuery('');
               }}
               title="Browse pinned series"
-              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded transition-colors flex items-center gap-0.5"
+              className="absolute right-2 top-1/2 -translate-y-1/2 min-h-6 min-w-6 p-1 rounded transition-colors flex items-center justify-center gap-0.5"
               style={{ color: 'var(--text-muted)' }}
             >
               <Pin className="w-3 h-3" />
@@ -340,7 +340,7 @@ function ComparePageInner() {
               className="flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-medium"
               style={{
                 background: 'color-mix(in srgb,' + CHART_COLORS[i % CHART_COLORS.length] + ' 15%, transparent)',
-                color: CHART_COLORS[i % CHART_COLORS.length],
+                color: 'var(--text)',
                 border: '1px solid ' + CHART_COLORS[i % CHART_COLORS.length] + '44',
               }}
             >

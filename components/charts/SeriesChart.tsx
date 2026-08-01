@@ -153,6 +153,8 @@ export function SeriesChart({ observations, title, units, color = '#10b981', eve
 
   return (
     <Line
+      role="img"
+      aria-label={`${title} time-series chart`}
       data={{
         datasets: [
           {
