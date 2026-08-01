@@ -124,3 +124,42 @@ test('compare has no automated WCAG A/AA violations', async ({ page }) => {
     await loadedPage.getByRole('img', { name: /Comparison chart/ }).waitFor();
   });
 });
+
+// Axe accepts `placeholder` as an accessible-name source, so the WCAG A/AA scans above
+// still pass if an explicit `aria-label` is deleted while a placeholder remains. That was
+// verified empirically: stripping only the search input's aria-label left all eight scans
+// green, and axe's `label` rule fired only once the placeholder was ALSO removed.
+//
+// Placeholder-only naming is not equivalent. The visible text disappears as soon as the
+// user types, placeholder contrast is typically below the AA threshold, and some assistive
+// technology does not expose it at all. So the automated scans cannot be the only guard
+// here; this asserts the explicit name source directly.
+test('form controls are named explicitly, not by placeholder alone', async ({ page }) => {
+  await mockPublicApis(page);
+  await page.goto('/');
+
+  const unnamed = await page.locator('input:visible, textarea:visible, select:visible').evaluateAll(
+    (elements) =>
+      elements
+        .filter((element) => {
+          const ariaLabel = element.getAttribute('aria-label')?.trim();
+          if (ariaLabel) return false;
+          if (element.getAttribute('aria-labelledby')?.trim()) return false;
+          if (element.id && document.querySelector(`label[for="${CSS.escape(element.id)}"]`)) {
+            return false;
+          }
+          return !element.closest('label');
+        })
+        .map((element) => {
+          const placeholder = element.getAttribute('placeholder') ?? '';
+          return `<${element.tagName.toLowerCase()}${
+            placeholder ? ` placeholder="${placeholder}"` : ''
+          }> class="${element.className}"`;
+        }),
+  );
+
+  expect(
+    unnamed,
+    `Controls relying on placeholder or title for their accessible name:\n${unnamed.join('\n')}`,
+  ).toEqual([]);
+});
