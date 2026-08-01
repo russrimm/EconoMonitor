@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import {
   observationStartDate,
@@ -623,4 +626,40 @@ test('secret-pattern scanner reports locations without retaining matched values'
   ]);
   assert.equal(JSON.stringify(findings).includes(token), false);
   assert.deepEqual(scanText('GITHUB_TOKEN=<your-github-models-token>'), []);
+});
+
+// A machine-level ~/.npmrc pointing at an internal Microsoft package proxy
+// silently rewrites every `resolved` URL during install, which corrupts
+// provenance for this public repository and breaks `npm ci` for outside
+// contributors who cannot reach that feed. The root .npmrc pins the public
+// registry; these tests fail if a contaminated lockfile is ever committed.
+const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
+const internalFeed =
+  /ms-feed-\d+\.pkgs\.visualstudio\.com|packagefeedproxy\.microsoft\.io|pkgs\.dev\.azure\.com/gi;
+
+test('package-lock.json resolves only to the public npm registry', () => {
+  const lockfile = join(repoRoot, 'package-lock.json');
+  assert.equal(existsSync(lockfile), true, 'package-lock.json is missing');
+
+  const matches = readFileSync(lockfile, 'utf8').match(internalFeed) ?? [];
+  assert.deepEqual(
+    [...new Set(matches)],
+    [],
+    'package-lock.json contains internal package-feed URLs; regenerate it with ' +
+      '`npm install --registry=https://registry.npmjs.org`',
+  );
+});
+
+test('.npmrc pins the public npm registry', () => {
+  const npmrc = join(repoRoot, '.npmrc');
+  assert.equal(
+    existsSync(npmrc),
+    true,
+    'no .npmrc; npm reads project config from the working directory and does ' +
+      'not walk up the tree, so the install root needs its own declaration',
+  );
+  assert.match(
+    readFileSync(npmrc, 'utf8'),
+    /^\s*registry\s*=\s*https:\/\/registry\.npmjs\.org\/?\s*$/m,
+  );
 });
