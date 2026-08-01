@@ -3,7 +3,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Loader2, MessageCircle, RotateCcw, Send, Sparkles } from 'lucide-react';
 import { MAX_CHAT_MESSAGES } from '@/lib/aiValidation';
+import {
+  readBoundedResponseChunks,
+  readBoundedResponseText,
+  withDeadline,
+} from '@/lib/responseBody';
 import { AiDataNotice } from '@/components/ai/AiDataNotice';
+
+const MAX_RESPONSE_BYTES = 64 * 1024;
 
 interface Message {
   role: 'user' | 'assistant';
@@ -99,6 +106,7 @@ export default function ChatPage() {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, streamingText]);
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   const send = useCallback(
     async (text: string) => {
@@ -120,35 +128,43 @@ export default function ChatPage() {
           body: JSON.stringify({
             messages: [...messages, userMsg].slice(-MAX_CHAT_MESSAGES),
           }),
-          signal: controller.signal,
+          signal: withDeadline(controller.signal, 75_000),
         });
 
         if (!res.ok) {
-          const msg = await res.text();
+          const msg = await readBoundedResponseText(res, 4 * 1024);
+          if (abortRef.current !== controller) return;
           setError(msg || 'Something went wrong.');
-          setIsStreaming(false);
           return;
         }
 
-        const reader = res.body!.getReader();
         const decoder = new TextDecoder();
         let accumulated = '';
 
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
+        for await (const value of readBoundedResponseChunks(res, MAX_RESPONSE_BYTES)) {
           accumulated += decoder.decode(value, { stream: true });
-          setStreamingText(accumulated);
+          if (abortRef.current === controller) {
+            setStreamingText(accumulated);
+          }
         }
+        accumulated += decoder.decode();
 
-        setMessages((prev) => [...prev, { role: 'assistant', content: accumulated }]);
-        setStreamingText('');
+        if (abortRef.current === controller) {
+          setMessages((prev) => [...prev, { role: 'assistant', content: accumulated }]);
+          setStreamingText('');
+        }
       } catch (e) {
-        if ((e as Error).name !== 'AbortError') {
+        if (
+          (e as Error).name !== 'AbortError' &&
+          abortRef.current === controller
+        ) {
           setError('Connection failed. Please try again.');
         }
       } finally {
-        setIsStreaming(false);
+        if (abortRef.current === controller) {
+          abortRef.current = null;
+          setIsStreaming(false);
+        }
       }
     },
     [messages],

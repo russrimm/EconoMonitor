@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { usePinnedSeries } from '@/hooks/usePinnedSeries';
 import { useReleaseDates } from '@/hooks/useFredQuery';
 import { MetricCard } from '@/components/dashboard/MetricCard';
-import { formatDate } from '@/lib/utils';
+import { formatDate, localCalendarDate } from '@/lib/utils';
 
 export default function DashboardPage() {
   const { pinned, toggle, isPinned, hydrated } = usePinnedSeries();
@@ -14,7 +14,7 @@ export default function DashboardPage() {
     isError: releasesError,
     refetch: refetchReleases,
   } = useReleaseDates();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localCalendarDate();
   const releaseDates = releaseDatesData?.release_dates ?? [];
   const futureReleases = releaseDates
     .filter((release) => release.date >= today)

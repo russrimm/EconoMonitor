@@ -21,6 +21,7 @@ import {
   validateChatMessages,
 } from '../lib/aiValidation.ts';
 import {
+  fraserOperationName,
   hasAcceptableQueryLength,
   isAllowedFraserPath,
   isAllowedFredPath,
@@ -45,11 +46,15 @@ import {
   readLimitedText,
 } from '../lib/upstream.ts';
 import {
+  formatFraserDate,
+} from '../lib/fraser.ts';
+import { readBoundedResponseText } from '../lib/responseBody.ts';
+import {
   isIsoDate as isValidUpstreamDate,
   validateFraserPayload,
   validateFredPayload,
 } from '../lib/upstreamSchemas.ts';
-import { datasetsToCSV } from '../lib/utils.ts';
+import { datasetsToCSV, localCalendarDate } from '../lib/utils.ts';
 import { scanText } from '../scripts/check-secrets.mjs';
 
 test('observation ranges reject unknown URL values and use UTC-safe calendar dates', () => {
@@ -150,6 +155,10 @@ test('API proxy allowlists expose only application-used upstream paths', () => {
   assert.equal(isAllowedFredPath('sources'), false);
   assert.equal(isAllowedFraserPath('timeline/abc-123/events'), true);
   assert.equal(isAllowedFraserPath('admin/secrets'), false);
+  assert.equal(
+    fraserOperationName('title/user-supplied-id/items'),
+    'title/:id/items',
+  );
   assert.equal(hasAcceptableQueryLength(`?q=${'x'.repeat(3_000)}`), false);
   assert.equal(
     validateFredQuery(
@@ -203,39 +212,138 @@ test('limited JSON parsing enforces declared and streamed body sizes', async () 
   assert.deepEqual(parsed, { ok: true });
 });
 
-test('upstream observability emits one terminal payload-free event', async () => {
+test('bounded upstream responses reject declared and streamed overages', async () => {
+  const declaredOversize = new Response('small', {
+    headers: { 'content-length': '100' },
+  });
+  await assert.rejects(
+    () => readBoundedResponseText(declaredOversize, 10),
+    /size limit/,
+  );
+  assert.equal(declaredOversize.body.locked, false);
+
+  const response = new Response(
+    new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('123456'));
+        controller.enqueue(new TextEncoder().encode('789012'));
+        controller.close();
+      },
+    }),
+  );
+  await assert.rejects(() => readBoundedResponseText(response, 10), /size limit/);
+  assert.equal(response.body.locked, false);
+});
+
+test('upstream observability emits redacted terminal events for every outcome', async () => {
   const originalFetch = globalThis.fetch;
   const originalInfo = console.info;
   const events = [];
-  globalThis.fetch = async () =>
-    new Response(JSON.stringify({ ok: true }), {
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-    });
   console.info = (message) => events.push(JSON.parse(message));
+  const sensitiveValues = [
+    'https://example.test/private?query=user-search',
+    'user-search',
+    'GDP-USER-SERIES',
+    'payload-fragment',
+    'credential-placeholder',
+    'person@example.test',
+  ];
+  const context = {
+    service: 'fred',
+    operation: 'series',
+    timeoutMs: 1_000,
+    cachePolicy: 'no-store',
+  };
+  const rejectOnAbort = (_input, init) =>
+    new Promise((_resolve, reject) => {
+      const rejectAbort = () => reject(new DOMException('request aborted', 'AbortError'));
+      if (init.signal.aborted) rejectAbort();
+      else init.signal.addEventListener('abort', rejectAbort, { once: true });
+    });
 
   try {
+    globalThis.fetch = async () =>
+      new Response(JSON.stringify({ value: 'payload-fragment' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
     const response = await fetchUpstream(
-      new URL('https://example.test/private?query=do-not-log'),
-      { cache: 'no-store' },
+      new URL(sensitiveValues[0]),
       {
-        service: 'fred',
-        operation: 'series',
-        timeoutMs: 1_000,
-        cachePolicy: 'no-store',
+        cache: 'no-store',
+        headers: { Authorization: 'Bearer credential-placeholder' },
       },
+      context,
     );
     assert.equal(events.length, 0);
-    assert.deepEqual(await readLimitedUpstreamJson(response, 100), { ok: true });
+    assert.deepEqual(await readLimitedUpstreamJson(response, 100), {
+      value: 'payload-fragment',
+    });
     assert.equal(events.length, 0);
+    logUpstreamSuccess(response);
+    logUpstreamSuccess(response);
 
-    logUpstreamSuccess(response);
-    logUpstreamSuccess(response);
-    assert.equal(events.length, 1);
-    assert.equal(events[0].outcome, 'success');
-    assert.equal(events[0].cacheOutcome, 'bypass');
-    assert.equal(JSON.stringify(events[0]).includes('do-not-log'), false);
-    assert.equal(Object.hasOwn(events[0], 'payload'), false);
+    globalThis.fetch = async () =>
+      new Response('person@example.test payload-fragment', { status: 503 });
+    await fetchUpstream(sensitiveValues[0], { cache: 'no-store' }, context);
+
+    globalThis.fetch = async () =>
+      new Response('payload-fragment', {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    const invalidResponse = await fetchUpstream(
+      sensitiveValues[0],
+      { cache: 'no-store' },
+      context,
+    );
+    await assert.rejects(() => readLimitedUpstreamJson(invalidResponse, 100));
+
+    globalThis.fetch = async () => {
+      throw new Error(`network failure at ${sensitiveValues[0]}`);
+    };
+    await assert.rejects(() =>
+      fetchUpstream(sensitiveValues[0], { cache: 'no-store' }, context),
+    );
+
+    globalThis.fetch = rejectOnAbort;
+    await assert.rejects(() =>
+      fetchUpstream(
+        sensitiveValues[0],
+        { cache: 'no-store' },
+        { ...context, timeoutMs: 5 },
+      ),
+    );
+
+    const controller = new AbortController();
+    controller.abort('GDP-USER-SERIES');
+    await assert.rejects(() =>
+      fetchUpstream(
+        sensitiveValues[0],
+        { cache: 'no-store', signal: controller.signal },
+        context,
+      ),
+    );
+
+    assert.deepEqual(
+      events.map((event) => event.outcome),
+      ['success', 'http_error', 'invalid_payload', 'network_error', 'timeout', 'aborted'],
+    );
+    assert.equal(events.every((event) => event.event === 'upstream_request'), true);
+    assert.equal(events.every((event) => event.cacheOutcome !== undefined), true);
+
+    const serializedEvents = JSON.stringify(events);
+    for (const sensitive of sensitiveValues) {
+      assert.equal(serializedEvents.includes(sensitive), false);
+    }
+    for (const event of events) {
+      assert.equal(
+        Object.keys(event).some((key) =>
+          /(url|query|payload|credential|token|authorization|series.?id|email|pii)/i.test(key),
+        ),
+        false,
+      );
+    }
   } finally {
     globalThis.fetch = originalFetch;
     console.info = originalInfo;
@@ -352,6 +460,12 @@ test('FRED success payload validation rejects malformed 200 responses', async ()
   for (const [path, payload] of validPayloads) {
     assert.equal(validateFredPayload(path, payload), true, path);
   }
+  assert.equal(
+    validateFredPayload('series', {
+      seriess: [{ ...series, notes: { unsafe: true } }],
+    }),
+    false,
+  );
 
   const malformed200 = new Response(
     JSON.stringify({ observations: [{ date: '2026-02-30', value: null }], count: 1 }),
@@ -404,6 +518,34 @@ test('FRASER success payload validation rejects malformed 200 responses', async 
   assert.equal(validateFraserPayload('title/1', envelope([record])), true);
   assert.equal(validateFraserPayload('title/1/items', envelope([record])), true);
   assert.equal(validateFraserPayload('item/1', envelope([record])), true);
+  assert.equal(
+    validateFraserPayload('theme', envelope([{
+      ...theme,
+      subject: { topic: {} },
+    }])),
+    false,
+  );
+  assert.equal(
+    validateFraserPayload('timeline', envelope([{
+      ...timeline,
+      abstract: {},
+    }])),
+    false,
+  );
+  assert.equal(
+    validateFraserPayload('timeline/1/events', envelope([{
+      ...event,
+      date: '2024-02-31',
+    }])),
+    false,
+  );
+  assert.equal(
+    validateFraserPayload('title/1', envelope([{
+      ...record,
+      originInfo: { dateIssued: [{}] },
+    }])),
+    false,
+  );
 
   const malformed200 = new Response(
     JSON.stringify(envelope([{
@@ -423,6 +565,34 @@ test('upstream date validation is UTC-safe at month, leap-day, and DST boundarie
   assert.equal(isValidUpstreamDate('2026-04-31'), false);
   assert.equal(isValidUpstreamDate('2026-03-08'), true);
   assert.equal(isValidUpstreamDate('2026-11-01'), true);
+});
+
+test('FRASER period labels preserve month, quarter, and DST boundary dates', () => {
+  const originalTimezone = process.env.TZ;
+  process.env.TZ = 'America/New_York';
+  try {
+    assert.equal(formatFraserDate('2024-03-31'), 'March 31, 2024');
+    assert.equal(formatFraserDate('2024-06-30'), 'June 30, 2024');
+    assert.equal(formatFraserDate('2024-03-10'), 'March 10, 2024');
+    assert.equal(formatFraserDate('2024-11-03'), 'November 3, 2024');
+  } finally {
+    if (originalTimezone === undefined) delete process.env.TZ;
+    else process.env.TZ = originalTimezone;
+  }
+});
+
+test('local calendar dates do not cross the user day at UTC midnight', () => {
+  const originalTimezone = process.env.TZ;
+  process.env.TZ = 'America/Los_Angeles';
+  try {
+    assert.equal(
+      localCalendarDate(new Date('2026-07-01T00:30:00Z')),
+      '2026-06-30',
+    );
+  } finally {
+    if (originalTimezone === undefined) delete process.env.TZ;
+    else process.env.TZ = originalTimezone;
+  }
 });
 
 test('multi-series CSV exports preserve series identity and units', () => {

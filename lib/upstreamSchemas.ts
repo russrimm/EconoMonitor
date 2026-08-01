@@ -48,7 +48,8 @@ function isFredSeries(value: unknown): boolean {
     isIsoDate(value.observation_end) &&
     typeof value.last_updated === 'string' &&
     typeof value.popularity === 'number' &&
-    Number.isFinite(value.popularity)
+    Number.isFinite(value.popularity) &&
+    (value.notes === undefined || typeof value.notes === 'string')
   );
 }
 
@@ -143,6 +144,29 @@ function isStringOrNumber(value: unknown): boolean {
   return typeof value === 'string' || typeof value === 'number';
 }
 
+function isStringArray(value: unknown): boolean {
+  return Array.isArray(value) && value.every((entry) => typeof entry === 'string');
+}
+
+function isOptionalString(value: unknown): boolean {
+  return value === undefined || typeof value === 'string';
+}
+
+function isFraserDate(value: unknown): value is string {
+  if (typeof value !== 'string' || value.trim() === '') return false;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return isIsoDate(value);
+  return !Number.isNaN(new Date(value).getTime());
+}
+
+function isIdentifierInfo(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    Array.isArray(value.recordIdentifier) &&
+    value.recordIdentifier.length > 0 &&
+    value.recordIdentifier.every(isStringOrNumber)
+  );
+}
+
 function isFraserRecordInfo(value: unknown): boolean {
   return (
     isRecord(value) &&
@@ -183,12 +207,63 @@ function isFraserLocation(value: unknown): boolean {
   );
 }
 
+function isFraserOriginInfo(value: unknown): boolean {
+  return (
+    value === undefined ||
+    (isRecord(value) &&
+      isOptionalString(value.issuance) &&
+      isOptionalString(value.frequency) &&
+      (value.sortDate === undefined || isFraserDate(value.sortDate)) &&
+      (value.dateIssued === undefined ||
+        (Array.isArray(value.dateIssued) &&
+          value.dateIssued.every(
+            (entry) =>
+              isFraserDate(entry) ||
+              (isRecord(entry) && isFraserDate(entry.$)),
+          ))))
+  );
+}
+
+function isFraserSubject(value: unknown): boolean {
+  return (
+    value === undefined ||
+    (isRecord(value) &&
+      (value.topic === undefined ||
+        (Array.isArray(value.topic) &&
+          value.topic.every(
+            (entry) =>
+              isRecord(entry) &&
+              typeof entry.topic === 'string' &&
+              isIdentifierInfo(entry.recordInfo),
+          ))))
+  );
+}
+
+function isFraserName(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.role === 'string' &&
+    Array.isArray(value.namePart) &&
+    value.namePart.every(
+      (part) =>
+        typeof part === 'string' ||
+        (isRecord(part) && typeof part.$ === 'string'),
+    )
+  );
+}
+
 function isFraserRecord(value: unknown): boolean {
   return (
     isRecord(value) &&
     isFraserRecordInfo(value.recordInfo) &&
     (value.titleInfo === undefined || isTitleInfo(value.titleInfo)) &&
-    isFraserLocation(value.location)
+    isFraserLocation(value.location) &&
+    isFraserOriginInfo(value.originInfo) &&
+    (value.abstract === undefined || isStringArray(value.abstract)) &&
+    (value.genre === undefined || isStringArray(value.genre)) &&
+    (value.name === undefined ||
+      (Array.isArray(value.name) && value.name.every(isFraserName))) &&
+    isFraserSubject(value.subject)
   );
 }
 
@@ -197,7 +272,9 @@ function isFraserTheme(value: unknown): boolean {
     isRecord(value) &&
     isTitleInfo(value.titleInfo) &&
     isFraserRecordInfo(value.recordInfo) &&
-    isFraserLocation(value.location)
+    isFraserLocation(value.location) &&
+    (value.abstract === undefined || isStringArray(value.abstract)) &&
+    isFraserSubject(value.subject)
   );
 }
 
@@ -206,17 +283,34 @@ function isFraserTimeline(value: unknown): boolean {
     isRecord(value) &&
     typeof value.id === 'string' &&
     isHttpUrl(value.url) &&
-    typeof value.title === 'string'
+    typeof value.title === 'string' &&
+    isOptionalString(value.description) &&
+    isOptionalString(value.abstract) &&
+    isOptionalString(value.created) &&
+    isOptionalString(value.modified)
   );
 }
 
 function isFraserTimelineEvent(value: unknown): boolean {
-  if (!isRecord(value) || !isFraserLocation(value.location)) return false;
+  if (
+    !isRecord(value) ||
+    !isFraserLocation(value.location) ||
+    !isFraserOriginInfo(value.originInfo) ||
+    (value.titleInfo !== undefined && !isTitleInfo(value.titleInfo)) ||
+    (value.abstract !== undefined && !isStringArray(value.abstract)) ||
+    (value.note !== undefined && !isStringArray(value.note)) ||
+    (value.recordInfo !== undefined && !isFraserRecordInfo(value.recordInfo)) ||
+    !isOptionalString(value.title) ||
+    (value.date !== undefined && !isFraserDate(value.date)) ||
+    !isOptionalString(value.description)
+  ) {
+    return false;
+  }
   const hasTitle =
     typeof value.title === 'string' ||
-    (value.titleInfo !== undefined && isTitleInfo(value.titleInfo));
+    value.titleInfo !== undefined;
   const hasDate =
-    (typeof value.date === 'string' && value.date.length > 0) ||
+    typeof value.date === 'string' ||
     (isRecord(value.originInfo) &&
       (typeof value.originInfo.sortDate === 'string' ||
         Array.isArray(value.originInfo.dateIssued)));

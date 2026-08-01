@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
+  fraserOperationName,
   hasAcceptableQueryLength,
   isAllowedFraserPath,
   validateFraserQuery,
@@ -68,7 +69,7 @@ export async function GET(
       signal: request.signal,
     }, {
       service: 'fraser',
-      operation: fraserPath,
+      operation: fraserOperationName(fraserPath),
       timeoutMs: 15_000,
       cachePolicy: 'no-store',
     });

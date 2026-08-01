@@ -70,12 +70,11 @@ async function fetchGdeltNews(
     throw new Error('upstream response did not contain articles');
   }
 
-  const sourceArticles = (data as { articles: unknown[] }).articles;
+  const sourceArticles = (data as { articles: unknown[] }).articles.slice(0, 100);
   const articles = sourceArticles
-    .slice(0, 100)
     .map(parseGdeltArticle)
     .filter((article): article is NewsArticle => article !== null);
-  if (sourceArticles.length > 0 && articles.length === 0) {
+  if (articles.length !== sourceArticles.length) {
     logInvalidPayload(upstream);
     throw new Error('upstream articles were malformed');
   }
@@ -152,7 +151,7 @@ async function fetchFederalReserveNews(signal: AbortSignal): Promise<NewsArticle
       };
     })
     .filter((article): article is NewsArticle => article !== null);
-  if (sourceItems.length > 0 && articles.length === 0) {
+  if (articles.length !== sourceItems.length) {
     logInvalidPayload(upstream);
     throw new Error('upstream feed items were malformed');
   }

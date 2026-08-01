@@ -1,3 +1,8 @@
+import {
+  readBoundedResponseJson,
+  withDeadline,
+} from './responseBody.ts';
+
 export const NEWS_TOPICS = ['all', 'markets', 'economy', 'business'] as const;
 
 export type NewsTopic = (typeof NEWS_TOPICS)[number];
@@ -142,12 +147,9 @@ export async function getLatestNews(
   signal?: AbortSignal,
 ): Promise<NewsResponse> {
   const response = await fetch(`/api/news?topic=${encodeURIComponent(topic)}`, {
-    signal,
+    signal: withDeadline(signal, 20_000),
   });
-  const contentType = response.headers.get('content-type') ?? '';
-  const data: unknown = contentType.includes('application/json')
-    ? await response.json().catch(() => null)
-    : null;
+  const data = await readBoundedResponseJson(response, 512 * 1024).catch(() => null);
 
   if (!response.ok) {
     const message =

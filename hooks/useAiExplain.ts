@@ -2,6 +2,13 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { EventCategory } from '@/lib/events';
+import {
+  readBoundedResponseChunks,
+  readBoundedResponseText,
+  withDeadline,
+} from '@/lib/responseBody';
+
+const MAX_RESPONSE_BYTES = 256 * 1024;
 
 export interface ExplainCandidate {
   id: string;
@@ -61,24 +68,21 @@ export function useAiExplain(): UseAiExplainResult {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(req),
-        signal: controller.signal,
+        signal: withDeadline(controller.signal, 75_000),
       });
 
       if (!res.ok) {
-        const msg = await res.text();
+        const msg = await readBoundedResponseText(res, 4 * 1024);
         if (abortRef.current !== controller) return;
         setError(msg || `Request failed (${res.status})`);
         return;
       }
 
-      const reader = res.body!.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
       let metaConsumed = false;
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+      for await (const value of readBoundedResponseChunks(res, MAX_RESPONSE_BYTES)) {
         buffer += decoder.decode(value, { stream: true });
 
         if (!metaConsumed) {

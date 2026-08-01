@@ -1,3 +1,7 @@
+import {
+  readBoundedResponseText,
+} from './responseBody.ts';
+
 export type UpstreamOutcome =
   | 'success'
   | 'http_error'
@@ -119,33 +123,7 @@ export async function readLimitedText(
   maximumBytes: number,
 ): Promise<string> {
   try {
-    const declaredLength = Number(response.headers.get('content-length'));
-    if (Number.isFinite(declaredLength) && declaredLength > maximumBytes) {
-      throw new Error('upstream response exceeded size limit');
-    }
-    if (!response.body) return '';
-
-    const reader = response.body.getReader();
-    const chunks: Uint8Array[] = [];
-    let bytes = 0;
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      bytes += value.byteLength;
-      if (bytes > maximumBytes) {
-        await reader.cancel();
-        throw new Error('upstream response exceeded size limit');
-      }
-      chunks.push(value);
-    }
-
-    const body = new Uint8Array(bytes);
-    let offset = 0;
-    for (const chunk of chunks) {
-      body.set(chunk, offset);
-      offset += chunk.byteLength;
-    }
-    return new TextDecoder().decode(body);
+    return await readBoundedResponseText(response, maximumBytes);
   } catch (error) {
     logInvalidPayload(response);
     throw error;

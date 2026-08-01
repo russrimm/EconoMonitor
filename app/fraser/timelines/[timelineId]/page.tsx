@@ -8,6 +8,7 @@ import {
   getEventTitle,
   getEventDate,
   getEventDescription,
+  formatFraserDate,
   extractUrl,
   type FraserTimelineEvent,
 } from '@/lib/fraser';
@@ -19,17 +20,7 @@ function EventCard({ event, index }: { event: FraserTimelineEvent; index: number
   const description = getEventDescription(event);
   const fraserUrl = extractUrl(event.location);
 
-  // Format a readable date if it looks like YYYY-MM-DD
-  const displayDate = date
-    ? (() => {
-        const d = new Date(
-          /^\d{4}-\d{2}-\d{2}$/.test(date) ? `${date}T00:00:00` : date,
-        );
-        return isNaN(d.getTime())
-          ? date
-          : d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-      })()
-    : null;
+  const displayDate = date ? formatFraserDate(date) : null;
 
   return (
     <div className="flex gap-4">

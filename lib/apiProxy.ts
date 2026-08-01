@@ -56,6 +56,13 @@ export function isAllowedFraserPath(path: string): boolean {
   return collection === 'item' && segments.length === 2;
 }
 
+export function fraserOperationName(path: string): string {
+  return path
+    .split('/')
+    .map((segment, index) => (index === 1 ? ':id' : segment))
+    .join('/');
+}
+
 export function hasAcceptableQueryLength(search: string, maxLength = 2_048): boolean {
   return search.length <= maxLength;
 }

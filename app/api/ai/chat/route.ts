@@ -6,6 +6,7 @@ import { readLimitedJson, RequestBodyError } from '@/lib/http';
 export const runtime = 'nodejs';
 
 const MAX_BODY_BYTES = 96 * 1024;
+const PROVIDER_TIMEOUT_MS = 60_000;
 const RESPONSE_HEADERS = {
   'Cache-Control': 'no-store',
   'X-Content-Type-Options': 'nosniff',
@@ -63,6 +64,10 @@ export async function POST(req: NextRequest) {
       });
 
   const model = useAzure ? azureDeployment : 'gpt-4o';
+  const providerSignal = AbortSignal.any([
+    req.signal,
+    AbortSignal.timeout(PROVIDER_TIMEOUT_MS),
+  ]);
 
   const createStream = () =>
     client.chat.completions.create(
@@ -76,7 +81,7 @@ export async function POST(req: NextRequest) {
           ...validation.value,
         ],
       },
-      { signal: req.signal },
+      { signal: providerSignal },
     );
   let stream: Awaited<ReturnType<typeof createStream>>;
   try {

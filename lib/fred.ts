@@ -1,3 +1,8 @@
+import {
+  readBoundedResponseJson,
+  withDeadline,
+} from './responseBody.ts';
+
 // ─── FRED API Types ────────────────────────────────────────────────────────────
 
 export interface FredSeries {
@@ -244,14 +249,17 @@ async function fredFetch<T>(
   const searchParams = new URLSearchParams(params);
   const url = `/api/fred/${path}?${searchParams.toString()}`;
 
-  const res = await fetch(url, { signal });
+  const res = await fetch(url, { signal: withDeadline(signal, 20_000) });
+  const maximumBytes =
+    path === 'series/observations' ? 25 * 1024 * 1024 : 5 * 1024 * 1024;
+  const data = await readBoundedResponseJson(res, maximumBytes).catch(() => null);
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
     throw new Error(
-      (body as { error?: string }).error ?? `FRED proxy error ${res.status}`,
+      (data as { error?: string } | null)?.error ?? `FRED proxy error ${res.status}`,
     );
   }
-  return res.json() as Promise<T>;
+  if (data === null) throw new Error('FRED proxy returned malformed data.');
+  return data as T;
 }
 
 // ─── Observation date range helpers ────────────────────────────────────────────
@@ -421,9 +429,9 @@ export async function getReleases(offset = 0, signal?: AbortSignal) {
   }, signal);
 }
 
-export async function getReleaseDates(limit = 100, signal?: AbortSignal) {
+export async function getReleaseDates(signal?: AbortSignal) {
   return fredFetch<{ release_dates: FredReleaseDate[] }>('releases/dates', {
-    limit: String(limit),
+    limit: '1000',
     include_release_dates_with_no_data: 'true',
     sort_order: 'desc',
   }, signal);

@@ -132,7 +132,7 @@ export function useReleases(offset = 0) {
 export function useReleaseDates() {
   return useQuery({
     queryKey: ['release-dates'],
-    queryFn: ({ signal }) => getReleaseDates(100, signal),
+    queryFn: ({ signal }) => getReleaseDates(signal),
     staleTime: 5 * 60 * 1000,
   });
 }
