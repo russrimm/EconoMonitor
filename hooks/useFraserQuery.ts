@@ -17,7 +17,7 @@ import {
 export function useThemes(limit = 100) {
   return useQuery({
     queryKey: ['fraser', 'themes', limit],
-    queryFn: () => getThemes(limit),
+    queryFn: ({ signal }) => getThemes(limit, 1, signal),
     staleTime: 30 * 60 * 1000, // 30 min — archival content changes rarely
   });
 }
@@ -25,7 +25,7 @@ export function useThemes(limit = 100) {
 export function useFraserTheme(themeId: string | number) {
   return useQuery({
     queryKey: ['fraser', 'theme', themeId],
-    queryFn: () => getTheme(themeId),
+    queryFn: ({ signal }) => getTheme(themeId, signal),
     staleTime: 30 * 60 * 1000,
   });
 }
@@ -33,7 +33,7 @@ export function useFraserTheme(themeId: string | number) {
 export function useThemeRecords(themeId: string | number, limit = 20, page = 1) {
   return useQuery({
     queryKey: ['fraser', 'theme', themeId, 'records', page, limit],
-    queryFn: () => getThemeRecords(themeId, limit, page),
+    queryFn: ({ signal }) => getThemeRecords(themeId, limit, page, signal),
     staleTime: 30 * 60 * 1000,
   });
 }
@@ -43,7 +43,7 @@ export function useThemeRecords(themeId: string | number, limit = 20, page = 1) 
 export function useTimelines() {
   return useQuery({
     queryKey: ['fraser', 'timelines'],
-    queryFn: () => getTimelines(),
+    queryFn: ({ signal }) => getTimelines(100, 1, signal),
     staleTime: 60 * 60 * 1000, // 1 hour
   });
 }
@@ -51,7 +51,7 @@ export function useTimelines() {
 export function useFraserTimeline(timelineId: string) {
   return useQuery({
     queryKey: ['fraser', 'timeline', timelineId],
-    queryFn: () => getTimeline(timelineId),
+    queryFn: ({ signal }) => getTimeline(timelineId, signal),
     staleTime: 60 * 60 * 1000,
   });
 }
@@ -59,7 +59,7 @@ export function useFraserTimeline(timelineId: string) {
 export function useTimelineEvents(timelineId: string) {
   return useQuery({
     queryKey: ['fraser', 'timeline', timelineId, 'events'],
-    queryFn: () => getTimelineEvents(timelineId),
+    queryFn: ({ signal }) => getTimelineEvents(timelineId, 200, 1, signal),
     staleTime: 60 * 60 * 1000,
   });
 }
@@ -69,7 +69,7 @@ export function useTimelineEvents(timelineId: string) {
 export function useFraserTitle(titleId: string | number) {
   return useQuery({
     queryKey: ['fraser', 'title', titleId],
-    queryFn: () => getTitle(titleId),
+    queryFn: ({ signal }) => getTitle(titleId, signal),
     staleTime: 30 * 60 * 1000,
   });
 }
@@ -77,7 +77,7 @@ export function useFraserTitle(titleId: string | number) {
 export function useTitleItems(titleId: string | number, limit = 20, page = 1) {
   return useQuery({
     queryKey: ['fraser', 'title', titleId, 'items', page, limit],
-    queryFn: () => getTitleItems(titleId, limit, page),
+    queryFn: ({ signal }) => getTitleItems(titleId, limit, page, signal),
     staleTime: 30 * 60 * 1000,
   });
 }

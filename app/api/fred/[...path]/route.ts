@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import {
   hasAcceptableQueryLength,
   isAllowedFredPath,
+  validateFredQuery,
 } from '@/lib/apiProxy';
 
 const FRED_BASE = 'https://api.stlouisfed.org/fred';
@@ -30,6 +31,13 @@ export async function GET(
     return NextResponse.json(
       { error: 'Query string is too long.' },
       { status: 414, headers: { 'Cache-Control': 'no-store' } },
+    );
+  }
+  const queryError = validateFredQuery(fredPath, request.nextUrl.searchParams);
+  if (queryError) {
+    return NextResponse.json(
+      { error: queryError },
+      { status: 400, headers: { 'Cache-Control': 'no-store' } },
     );
   }
 

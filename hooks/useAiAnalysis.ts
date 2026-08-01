@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { prepareDatasetsForAnalysis, type AnalyzeDataset } from '@/lib/ai';
 
 export interface UseAiAnalysisResult {
@@ -16,6 +16,7 @@ export function useAiAnalysis(): UseAiAnalysisResult {
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   const reset = useCallback(() => {
     abortRef.current?.abort();
@@ -44,6 +45,7 @@ export function useAiAnalysis(): UseAiAnalysisResult {
 
       if (!res.ok) {
         const msg = await res.text();
+        if (abortRef.current !== controller) return;
         setError(msg || `Request failed (${res.status})`);
         return;
       }
@@ -55,14 +57,25 @@ export function useAiAnalysis(): UseAiAnalysisResult {
         const { done, value } = await reader.read();
         if (done) break;
         const chunk = decoder.decode(value, { stream: true });
-        setText((prev) => prev + chunk);
+        if (abortRef.current === controller) {
+          setText((prev) => prev + chunk);
+        }
+      }
+      const finalChunk = decoder.decode();
+      if (finalChunk && abortRef.current === controller) {
+        setText((prev) => prev + finalChunk);
       }
     } catch (err) {
       if ((err as { name?: string }).name !== 'AbortError') {
-        setError((err as Error).message ?? 'Unknown error');
+        if (abortRef.current === controller) {
+          setError((err as Error).message ?? 'Unknown error');
+        }
       }
     } finally {
-      setIsStreaming(false);
+      if (abortRef.current === controller) {
+        abortRef.current = null;
+        setIsStreaming(false);
+      }
     }
   }, []);
 

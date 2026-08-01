@@ -190,11 +190,12 @@ export function getEventDescription(event: FraserTimelineEvent): string {
 async function fraserFetch<T>(
   path: string,
   params: Record<string, string> = {},
+  signal?: AbortSignal,
 ): Promise<T> {
   const searchParams = new URLSearchParams(params);
   const url = `/api/fraser/${path}?${searchParams.toString()}`;
 
-  const res = await fetch(url);
+  const res = await fetch(url, { signal });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(
@@ -206,57 +207,76 @@ async function fraserFetch<T>(
 
 // ─── Themes ───────────────────────────────────────────────────────────────────
 
-export function getThemes(limit = 100, page = 1) {
+export function getThemes(limit = 100, page = 1, signal?: AbortSignal) {
   return fraserFetch<FraserResponse<FraserTheme>>('theme', {
     limit: String(limit),
     page: String(page),
-  });
+  }, signal);
 }
 
-export function getTheme(themeId: string | number) {
-  return fraserFetch<FraserResponse<FraserTheme>>(`theme/${themeId}`);
+export function getTheme(themeId: string | number, signal?: AbortSignal) {
+  return fraserFetch<FraserResponse<FraserTheme>>(`theme/${themeId}`, {}, signal);
 }
 
-export function getThemeRecords(themeId: string | number, limit = 20, page = 1) {
+export function getThemeRecords(
+  themeId: string | number,
+  limit = 20,
+  page = 1,
+  signal?: AbortSignal,
+) {
   return fraserFetch<FraserResponse<FraserRecord>>(`theme/${themeId}/records`, {
     limit: String(limit),
     page: String(page),
-  });
+  }, signal);
 }
 
 // ─── Timelines ────────────────────────────────────────────────────────────────
 
-export function getTimelines(limit = 100, page = 1) {
+export function getTimelines(limit = 100, page = 1, signal?: AbortSignal) {
   return fraserFetch<FraserResponse<FraserTimeline>>('timeline', {
     limit: String(limit),
     page: String(page),
-  });
+  }, signal);
 }
 
-export function getTimeline(timelineId: string) {
-  return fraserFetch<FraserResponse<FraserTimeline>>(`timeline/${timelineId}`);
+export function getTimeline(timelineId: string, signal?: AbortSignal) {
+  return fraserFetch<FraserResponse<FraserTimeline>>(
+    `timeline/${timelineId}`,
+    {},
+    signal,
+  );
 }
 
-export function getTimelineEvents(timelineId: string, limit = 200, page = 1) {
+export function getTimelineEvents(
+  timelineId: string,
+  limit = 200,
+  page = 1,
+  signal?: AbortSignal,
+) {
   return fraserFetch<FraserResponse<FraserTimelineEvent>>(`timeline/${timelineId}/events`, {
     limit: String(limit),
     page: String(page),
-  });
+  }, signal);
 }
 
 // ─── Titles & Items ───────────────────────────────────────────────────────────
 
-export function getTitle(titleId: string | number) {
-  return fraserFetch<FraserResponse<FraserRecord>>(`title/${titleId}`);
+export function getTitle(titleId: string | number, signal?: AbortSignal) {
+  return fraserFetch<FraserResponse<FraserRecord>>(`title/${titleId}`, {}, signal);
 }
 
-export function getTitleItems(titleId: string | number, limit = 20, page = 1) {
+export function getTitleItems(
+  titleId: string | number,
+  limit = 20,
+  page = 1,
+  signal?: AbortSignal,
+) {
   return fraserFetch<FraserResponse<FraserRecord>>(`title/${titleId}/items`, {
     limit: String(limit),
     page: String(page),
-  });
+  }, signal);
 }
 
-export function getItem(itemId: string | number) {
-  return fraserFetch<FraserResponse<FraserRecord>>(`item/${itemId}`);
+export function getItem(itemId: string | number, signal?: AbortSignal) {
+  return fraserFetch<FraserResponse<FraserRecord>>(`item/${itemId}`, {}, signal);
 }

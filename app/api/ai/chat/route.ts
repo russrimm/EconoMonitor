@@ -28,17 +28,6 @@ Guidelines:
 - Keep responses focused on economics, finance, and related policy topics.`;
 
 export async function POST(req: NextRequest) {
-  const githubToken = process.env.GITHUB_TOKEN;
-  const azureEndpoint = process.env.AZURE_OPENAI_ENDPOINT;
-  const azureKey = process.env.AZURE_OPENAI_API_KEY;
-  const azureDeployment = process.env.AZURE_OPENAI_DEPLOYMENT ?? 'gpt-4o';
-
-  const useAzure = Boolean(azureEndpoint && azureKey);
-
-  if (!useAzure && !githubToken) {
-    return textResponse('AI chat is not configured. Add GITHUB_TOKEN to .env.local.', 503);
-  }
-
   let body: unknown;
   try {
     body = await readLimitedJson(req, MAX_BODY_BYTES);
@@ -51,6 +40,15 @@ export async function POST(req: NextRequest) {
 
   const validation = validateChatMessages(body);
   if (!validation.ok) return textResponse(validation.error, 400);
+
+  const githubToken = process.env.GITHUB_TOKEN;
+  const azureEndpoint = process.env.AZURE_OPENAI_ENDPOINT;
+  const azureKey = process.env.AZURE_OPENAI_API_KEY;
+  const azureDeployment = process.env.AZURE_OPENAI_DEPLOYMENT ?? 'gpt-4o';
+  const useAzure = Boolean(azureEndpoint && azureKey);
+  if (!useAzure && !githubToken) {
+    return textResponse('AI chat is not configured. Add GITHUB_TOKEN to .env.local.', 503);
+  }
 
   const client = useAzure
     ? new OpenAI({

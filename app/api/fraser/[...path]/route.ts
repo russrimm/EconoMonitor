@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import {
   hasAcceptableQueryLength,
   isAllowedFraserPath,
+  validateFraserQuery,
 } from '@/lib/apiProxy';
 
 const FRASER_BASE = 'https://fraser.stlouisfed.org/api';
@@ -30,6 +31,13 @@ export async function GET(
     return NextResponse.json(
       { error: 'Query string is too long.' },
       { status: 414, headers: { 'Cache-Control': 'no-store' } },
+    );
+  }
+  const queryError = validateFraserQuery(request.nextUrl.searchParams);
+  if (queryError) {
+    return NextResponse.json(
+      { error: queryError },
+      { status: 400, headers: { 'Cache-Control': 'no-store' } },
     );
   }
 

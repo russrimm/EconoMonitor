@@ -39,8 +39,8 @@ export default function NewsPage() {
   const [topic, setTopic] = useState<NewsTopic>('all');
   const { data, isLoading, isFetching, error, refetch } = useQuery({
     queryKey: ['financial-news', topic],
-    queryFn: () => getLatestNews(topic),
-    staleTime: 15 * 60 * 1000,
+    queryFn: ({ signal }) => getLatestNews(topic, signal),
+    staleTime: 60 * 1000,
   });
 
   return (
@@ -83,6 +83,7 @@ export default function NewsPage() {
               key={value}
               type="button"
               onClick={() => setTopic(value)}
+              aria-pressed={active}
               className="px-3 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap"
               style={{
                 background: active
@@ -126,16 +127,20 @@ export default function NewsPage() {
             color: 'var(--text-muted)',
           }}
         >
-          One news provider is temporarily unavailable. Showing the latest
-          headlines from {data.providers.join(' and ')}.
+          One news provider is temporarily unavailable.
+          {data.providers.length > 0 &&
+            ` Showing the latest headlines from ${data.providers.join(' and ')}.`}
         </div>
       )}
 
       <section
         className="rounded-xl overflow-hidden"
-        aria-busy={isLoading}
+        aria-busy={isFetching}
         style={{ border: '1px solid var(--border)' }}
       >
+        <span className="sr-only" role="status" aria-live="polite">
+          {isFetching ? 'Refreshing financial news.' : 'Financial news updated.'}
+        </span>
         {isLoading
           ? Array.from({ length: 10 }).map((_, index) => (
               <div

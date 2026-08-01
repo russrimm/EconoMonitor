@@ -77,19 +77,6 @@ function buildSystemPrompt(): string {
 }
 
 export async function POST(req: NextRequest) {
-  const githubToken = process.env.GITHUB_TOKEN;
-  const azureEndpoint = process.env.AZURE_OPENAI_ENDPOINT;
-  const azureKey = process.env.AZURE_OPENAI_API_KEY;
-  const azureDeployment = process.env.AZURE_OPENAI_DEPLOYMENT ?? 'gpt-4o';
-  const useAzure = Boolean(azureEndpoint && azureKey);
-
-  if (!useAzure && !githubToken) {
-    return textResponse(
-      'AI explanation is not configured. Set GITHUB_TOKEN (or AZURE_OPENAI_ENDPOINT + AZURE_OPENAI_API_KEY) in your environment variables.',
-      503,
-    );
-  }
-
   let body: unknown;
   try {
     body = await readLimitedJson(req, MAX_BODY_BYTES);
@@ -103,6 +90,18 @@ export async function POST(req: NextRequest) {
   const validation = validateExplainBody(body);
   if (!validation.ok) return textResponse(validation.error, 400);
   const safeBody = validation.value;
+
+  const githubToken = process.env.GITHUB_TOKEN;
+  const azureEndpoint = process.env.AZURE_OPENAI_ENDPOINT;
+  const azureKey = process.env.AZURE_OPENAI_API_KEY;
+  const azureDeployment = process.env.AZURE_OPENAI_DEPLOYMENT ?? 'gpt-4o';
+  const useAzure = Boolean(azureEndpoint && azureKey);
+  if (!useAzure && !githubToken) {
+    return textResponse(
+      'AI explanation is not configured. Set GITHUB_TOKEN (or AZURE_OPENAI_ENDPOINT + AZURE_OPENAI_API_KEY) in your environment variables.',
+      503,
+    );
+  }
 
   const candidates = eventsNearby(safeBody.focusDate);
 

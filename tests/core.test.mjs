@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   observationStartDate,
   parseObservationRange,
+  transformedUnits,
 } from '../lib/fred.ts';
 import {
   applyNormalization,
@@ -23,12 +24,22 @@ import {
   hasAcceptableQueryLength,
   isAllowedFraserPath,
   isAllowedFredPath,
+  validateFraserQuery,
+  validateFredQuery,
 } from '../lib/apiProxy.ts';
 import { readLimitedJson, RequestBodyError } from '../lib/http.ts';
 import {
   compileFormula,
+  alignByDate,
   evaluateAcrossDates,
 } from '../lib/customIndicator.ts';
+import {
+  parseFederalReserveUrl,
+  parseGdeltArticle,
+  parseGdeltDate,
+  readLimitedText,
+} from '../lib/news.ts';
+import { datasetsToCSV } from '../lib/utils.ts';
 import { scanText } from '../scripts/check-secrets.mjs';
 
 test('observation ranges reject unknown URL values and use UTC-safe calendar dates', () => {
@@ -130,6 +141,32 @@ test('API proxy allowlists expose only application-used upstream paths', () => {
   assert.equal(isAllowedFraserPath('timeline/abc-123/events'), true);
   assert.equal(isAllowedFraserPath('admin/secrets'), false);
   assert.equal(hasAcceptableQueryLength(`?q=${'x'.repeat(3_000)}`), false);
+  assert.equal(
+    validateFredQuery(
+      'series/observations',
+      new URLSearchParams('series_id=GDP&limit=100000&units=pc1'),
+    ),
+    null,
+  );
+  assert.match(
+    validateFredQuery(
+      'series/observations',
+      new URLSearchParams('series_id=GDP&limit=999999999'),
+    ),
+    /limit/,
+  );
+  assert.match(
+    validateFredQuery('series', new URLSearchParams('unknown=value')),
+    /Unsupported/,
+  );
+  assert.equal(
+    validateFraserQuery(new URLSearchParams('limit=200&page=2')),
+    null,
+  );
+  assert.match(
+    validateFraserQuery(new URLSearchParams('limit=201')),
+    /limit/,
+  );
 });
 
 test('limited JSON parsing enforces declared and streamed body sizes', async () => {
@@ -160,6 +197,88 @@ test('formula parser supports negative exponents without changing unary preceden
   const row = [{ date: '2024-01-01', values: { A: 1, B: 1, C: 1, D: 1 } }];
   assert.equal(evaluateAcrossDates(compileFormula('-2^2'), row)[0].value, -4);
   assert.equal(evaluateAcrossDates(compileFormula('2^-2'), row)[0].value, 0.25);
+});
+
+test('economic units distinguish percentage-point changes', () => {
+  assert.equal(transformedUnits('Percent', 'chg'), 'Percentage points');
+  assert.equal(transformedUnits('%', 'ch1'), 'Percentage points');
+  assert.equal(transformedUnits('Bil. of $', 'chg'), 'Bil. of $');
+  assert.equal(transformedUnits('Percent', 'pch'), '% change');
+});
+
+test('custom indicator alignment preserves mixed-frequency forward filling', () => {
+  const aligned = alignByDate([
+    {
+      var: 'A',
+      observations: [
+        { date: '2024-01-01', value: '1' },
+        { date: '2024-02-01', value: '2' },
+        { date: '2024-03-01', value: '3' },
+      ],
+    },
+    {
+      var: 'B',
+      observations: [
+        { date: '2024-01-01', value: '10' },
+        { date: '2024-02-01', value: '20' },
+      ],
+    },
+  ]);
+  assert.deepEqual(aligned.map((row) => row.date), [
+    '2024-01-01',
+    '2024-02-01',
+    '2024-03-01',
+  ]);
+});
+
+test('news parsing rejects malformed dates, records, and deceptive links', async () => {
+  assert.equal(parseGdeltDate('20260231T000000Z'), null);
+  assert.equal(parseGdeltArticle(null), null);
+  assert.equal(
+    parseGdeltArticle({
+      url: 'https://example.com/story',
+      title: 'Headline',
+      seendate: '20260228T120000Z',
+      domain: 'spoofed.example',
+    })?.source,
+    'example.com',
+  );
+  assert.equal(parseFederalReserveUrl('javascript:alert(1)'), null);
+  assert.equal(parseFederalReserveUrl('https://example.com/fed'), null);
+  assert.match(
+    parseFederalReserveUrl('https://www.federalreserve.gov/newsevents.htm'),
+    /^https:\/\/www\.federalreserve\.gov\//,
+  );
+
+  await assert.rejects(
+    () =>
+      readLimitedText(
+        new Response('too large', {
+          headers: { 'content-length': '9' },
+        }),
+        4,
+      ),
+    /size limit/,
+  );
+});
+
+test('multi-series CSV exports preserve series identity and units', () => {
+  const csv = datasetsToCSV([
+    {
+      seriesId: 'GDP',
+      label: 'Gross Domestic Product',
+      units: 'Index (start = 100)',
+      observations: [{ date: '2024-01-01', value: '100' }],
+    },
+    {
+      seriesId: 'UNRATE',
+      label: 'Unemployment Rate',
+      units: 'Percentage points',
+      observations: [{ date: '2024-01-01', value: '4.1' }],
+    },
+  ]);
+  assert.match(csv, /"GDP","Gross Domestic Product","Index \(start = 100\)",100/);
+  assert.match(csv, /"UNRATE","Unemployment Rate","Percentage points",4\.1/);
 });
 
 test('secret-pattern scanner reports locations without retaining matched values', () => {

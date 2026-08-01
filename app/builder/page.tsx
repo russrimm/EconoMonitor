@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { AlertCircle, CheckCircle2, Plus, Trash2 } from 'lucide-react';
 import { useMultiObservations, useMultiSeries } from '@/hooks/useFredQuery';
 import { useCustomIndicators } from '@/hooks/useCustomIndicators';
+import { ChartDataTable } from '@/components/charts/ChartDataTable';
 import {
   alignByDate,
   compileFormula,
@@ -76,10 +77,17 @@ export default function BuilderPage() {
     }
   }, [formula]);
 
-  const usedVars = compileResult.compiled?.usedVars ?? [];
-  const activeInputs = usedVars
-    .map((v) => ({ var: v, seriesId: varSeries[v].trim().toUpperCase() }))
-    .filter((x) => x.seriesId !== '');
+  const usedVars = useMemo(
+    () => compileResult.compiled?.usedVars ?? [],
+    [compileResult.compiled],
+  );
+  const activeInputs = useMemo(
+    () =>
+      usedVars
+        .map((v) => ({ var: v, seriesId: varSeries[v].trim().toUpperCase() }))
+        .filter((x) => x.seriesId !== ''),
+    [usedVars, varSeries],
+  );
   const activeSeriesIds = activeInputs.map((x) => x.seriesId);
 
   const obsResults = useMultiObservations(activeSeriesIds, 'max');
@@ -89,6 +97,19 @@ export default function BuilderPage() {
     usedVars.length > 0 && activeInputs.length === usedVars.length;
   const allObsLoaded =
     allInputsFilled && obsResults.every((r) => r.data && !r.isLoading);
+  const failedInputIds = activeSeriesIds.filter(
+    (_, index) => obsResults[index]?.isError || metaResults[index]?.isError,
+  );
+  const inputEndDates = activeInputs
+    .map((input, index) => {
+      const latest = (obsResults[index]?.data?.observations ?? [])
+        .filter((observation) => observation.value !== '.' && observation.value !== '')
+        .at(-1);
+      return latest ? `${input.var}: ${latest.date}` : null;
+    })
+    .filter((value): value is string => value !== null);
+  const hasDifferentEndDates =
+    new Set(inputEndDates.map((value) => value.slice(value.indexOf(':') + 2))).size > 1;
 
   // Build preview points
   const previewPoints = useMemo(() => {
@@ -319,6 +340,8 @@ export default function BuilderPage() {
               value={formula}
               onChange={(e) => setFormula(e.target.value)}
               placeholder="(A - B) / B * 100"
+              aria-invalid={compileResult.error ? true : undefined}
+              aria-describedby="indicator-formula-status"
               className="w-full px-3 py-2 text-sm font-mono rounded-lg focus:outline-none focus:ring-2"
               style={{
                 background: 'var(--surface)',
@@ -326,7 +349,11 @@ export default function BuilderPage() {
                 color: 'var(--text)',
               }}
             />
-            <div className="mt-1.5 flex items-center gap-1.5 text-xs">
+            <div
+              id="indicator-formula-status"
+              className="mt-1.5 flex items-center gap-1.5 text-xs"
+              aria-live="polite"
+            >
               {compileResult.error ? (
                 <>
                   <AlertCircle className="w-3.5 h-3.5" style={{ color: '#ef4444' }} />
@@ -396,6 +423,25 @@ export default function BuilderPage() {
           )}
 
           {/* Save / delete */}
+          {failedInputIds.length > 0 && (
+            <div className="rounded-lg px-3 py-2 text-sm" role="alert" style={{
+              color: 'var(--red)',
+              border: '1px solid color-mix(in srgb, var(--red) 35%, transparent)',
+            }}>
+              Could not load: {failedInputIds.join(', ')}.{' '}
+              <button
+                className="font-medium underline"
+                onClick={() => {
+                  for (const result of [...obsResults, ...metaResults]) {
+                    if (result.isError) void result.refetch();
+                  }
+                }}
+              >
+                Retry
+              </button>
+            </div>
+          )}
+
           <div className="flex items-center gap-2">
             <button
               onClick={handleSave}
@@ -448,6 +494,26 @@ export default function BuilderPage() {
                   units={units}
                 />
               </div>
+              {hasDifferentEndDates && (
+                <p className="mb-2 text-xs" role="status" style={{ color: 'var(--text-muted)' }}>
+                  Input series end on different dates ({inputEndDates.join(', ')}).
+                  Later points carry the most recent published value forward.
+                </p>
+              )}
+              {previewPoints.length > 0 && (
+                <ChartDataTable
+                  title={`${name || 'Custom indicator'} chart data`}
+                  datasets={[{
+                    seriesId: editingId ?? 'CUSTOM',
+                    label: name || 'Custom indicator',
+                    units,
+                    observations: previewPoints.map((point) => ({
+                      date: point.date,
+                      value: String(point.value),
+                    })),
+                  }]}
+                />
+              )}
             </div>
           )}
 

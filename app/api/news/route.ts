@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
   isNewsTopic,
+  parseFederalReserveUrl,
+  parseGdeltArticle,
+  readLimitedText,
   type NewsArticle,
   type NewsResponse,
   type NewsTopic,
@@ -10,6 +13,9 @@ const GDELT_DOC_API = 'https://api.gdeltproject.org/api/v2/doc/doc';
 const FEDERAL_RESERVE_RSS =
   'https://www.federalreserve.gov/feeds/press_all.xml';
 const CACHE_SECONDS = 15 * 60;
+const UPSTREAM_TIMEOUT_MS = 10_000;
+const MAX_GDELT_BYTES = 512 * 1024;
+const MAX_FED_BYTES = 256 * 1024;
 
 const TOPIC_QUERIES: Record<NewsTopic, string> = {
   all: '("stock market" OR "financial markets" OR "interest rates" OR inflation OR earnings)',
@@ -18,66 +24,10 @@ const TOPIC_QUERIES: Record<NewsTopic, string> = {
   business: '(earnings OR merger OR acquisition OR IPO)',
 };
 
-interface GdeltArticle {
-  url?: unknown;
-  title?: unknown;
-  seendate?: unknown;
-  domain?: unknown;
-  sourcecountry?: unknown;
-  language?: unknown;
-}
-
-interface GdeltResponse {
-  articles?: unknown;
-}
-
-function parseGdeltDate(value: string): string | null {
-  const match = value.match(
-    /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/,
-  );
-  if (!match) return null;
-
-  const [, year, month, day, hour, minute, second] = match;
-  const date = new Date(`${year}-${month}-${day}T${hour}:${minute}:${second}Z`);
-  return Number.isNaN(date.getTime()) ? null : date.toISOString();
-}
-
-function parseArticle(value: GdeltArticle): NewsArticle | null {
-  if (
-    typeof value.url !== 'string' ||
-    typeof value.title !== 'string' ||
-    typeof value.seendate !== 'string' ||
-    typeof value.domain !== 'string'
-  ) {
-    return null;
-  }
-
-  let url: URL;
-  try {
-    url = new URL(value.url);
-  } catch {
-    return null;
-  }
-
-  const publishedAt = parseGdeltDate(value.seendate);
-  const title = value.title.trim();
-  if (!publishedAt || !title || !['http:', 'https:'].includes(url.protocol)) {
-    return null;
-  }
-
-  return {
-    url: url.toString(),
-    title,
-    publishedAt,
-    source: value.domain.replace(/^www\./, ''),
-    sourceCountry:
-      typeof value.sourcecountry === 'string' && value.sourcecountry.trim()
-        ? value.sourcecountry.trim()
-        : null,
-  };
-}
-
-async function fetchGdeltNews(topic: NewsTopic): Promise<NewsArticle[]> {
+async function fetchGdeltNews(
+  topic: NewsTopic,
+  signal: AbortSignal,
+): Promise<NewsArticle[]> {
   const gdeltUrl = new URL(GDELT_DOC_API);
 
   gdeltUrl.searchParams.set(
@@ -93,19 +43,30 @@ async function fetchGdeltNews(topic: NewsTopic): Promise<NewsArticle[]> {
   const upstream = await fetch(gdeltUrl, {
     headers: { Accept: 'application/json' },
     next: { revalidate: CACHE_SECONDS },
+    signal,
   });
 
   if (!upstream.ok) {
     throw new Error(`upstream returned ${upstream.status}`);
   }
 
-  const data = (await upstream.json()) as GdeltResponse;
-  if (!Array.isArray(data.articles)) {
+  const contentType = upstream.headers.get('content-type') ?? '';
+  if (!contentType.includes('json')) {
+    throw new Error('upstream response was not JSON');
+  }
+  const text = await readLimitedText(upstream, MAX_GDELT_BYTES);
+  const data: unknown = JSON.parse(text);
+  if (
+    typeof data !== 'object' ||
+    data === null ||
+    !Array.isArray((data as { articles?: unknown }).articles)
+  ) {
     throw new Error('upstream response did not contain articles');
   }
 
-  return data.articles
-    .map((article) => parseArticle(article as GdeltArticle))
+  return (data as { articles: unknown[] }).articles
+    .slice(0, 100)
+    .map(parseGdeltArticle)
     .filter((article): article is NewsArticle => article !== null);
 }
 
@@ -131,29 +92,35 @@ function extractXmlText(xml: string, tag: string): string | null {
   return match ? decodeXml(match[1]) : null;
 }
 
-async function fetchFederalReserveNews(): Promise<NewsArticle[]> {
+async function fetchFederalReserveNews(signal: AbortSignal): Promise<NewsArticle[]> {
   const upstream = await fetch(FEDERAL_RESERVE_RSS, {
     headers: { Accept: 'application/rss+xml, application/xml' },
     next: { revalidate: CACHE_SECONDS },
+    signal,
   });
 
   if (!upstream.ok) {
     throw new Error(`upstream returned ${upstream.status}`);
   }
 
-  const xml = await upstream.text();
+  const contentType = upstream.headers.get('content-type') ?? '';
+  if (!/(xml|rss)/i.test(contentType)) {
+    throw new Error('upstream response was not XML');
+  }
+  const xml = await readLimitedText(upstream, MAX_FED_BYTES);
   return [...xml.matchAll(/<item>([\s\S]*?)<\/item>/gi)]
     .map((match): NewsArticle | null => {
       const title = extractXmlText(match[1], 'title');
       const link = extractXmlText(match[1], 'link');
       const published = extractXmlText(match[1], 'pubDate');
-      if (!title || !link || !published) return null;
+      const safeLink = link ? parseFederalReserveUrl(link) : null;
+      if (!title || !safeLink || !published) return null;
 
       const publishedAt = new Date(published);
       if (Number.isNaN(publishedAt.getTime())) return null;
 
       return {
-        url: link,
+        url: safeLink,
         title,
         publishedAt: publishedAt.toISOString(),
         source: 'Federal Reserve',
@@ -188,19 +155,29 @@ function deduplicateAndSort(articles: NewsArticle[]): NewsArticle[] {
 export async function GET(request: NextRequest) {
   const requestedTopic = request.nextUrl.searchParams.get('topic');
   const topic = isNewsTopic(requestedTopic) ? requestedTopic : 'all';
+  const signal = AbortSignal.any([
+    request.signal,
+    AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
+  ]);
+  const includeFed = topic === 'all' || topic === 'economy';
   const [gdeltResult, fedResult] = await Promise.allSettled([
-    fetchGdeltNews(topic),
-    fetchFederalReserveNews(),
+    fetchGdeltNews(topic, signal),
+    includeFed
+      ? fetchFederalReserveNews(signal)
+      : Promise.resolve<NewsArticle[]>([]),
   ]);
 
   if (gdeltResult.status === 'rejected') {
     console.error('[GDELT news] fetch failed:', gdeltResult.reason);
   }
-  if (fedResult.status === 'rejected') {
+  if (includeFed && fedResult.status === 'rejected') {
     console.error('[Federal Reserve news] fetch failed:', fedResult.reason);
   }
 
-  if (gdeltResult.status === 'rejected' && fedResult.status === 'rejected') {
+  if (
+    gdeltResult.status === 'rejected' &&
+    (!includeFed || fedResult.status === 'rejected')
+  ) {
     return NextResponse.json(
       { error: 'Unable to contact the financial news services.' },
       { status: 502 },
@@ -210,27 +187,26 @@ export async function GET(request: NextRequest) {
   const gdeltArticles =
     gdeltResult.status === 'fulfilled' ? gdeltResult.value : [];
   const fedArticles =
-    fedResult.status === 'fulfilled' &&
-    (topic === 'all' ||
-      topic === 'economy' ||
-      gdeltResult.status === 'rejected')
+    includeFed &&
+    fedResult.status === 'fulfilled'
       ? fedResult.value
       : [];
   const providers = [
     ...(gdeltResult.status === 'fulfilled' ? ['GDELT'] : []),
-    ...(fedArticles.length > 0 ? ['Federal Reserve'] : []),
+    ...(includeFed && fedResult.status === 'fulfilled' ? ['Federal Reserve'] : []),
   ];
   const response: NewsResponse = {
     articles: deduplicateAndSort([...gdeltArticles, ...fedArticles]),
     updatedAt: new Date().toISOString(),
     providers,
     partial:
-      gdeltResult.status === 'rejected' || fedResult.status === 'rejected',
+      gdeltResult.status === 'rejected' ||
+      (includeFed && fedResult.status === 'rejected'),
   };
 
   return NextResponse.json(response, {
     headers: {
-      'Cache-Control': `public, s-maxage=${CACHE_SECONDS}, stale-while-revalidate=300`,
+      'Cache-Control': 'no-store',
     },
   });
 }
