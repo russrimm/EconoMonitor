@@ -9,9 +9,22 @@ import { formatDate } from '@/lib/utils';
 
 export default function DashboardPage() {
   const { pinned, toggle, isPinned, hydrated } = usePinnedSeries();
-  const { data: releaseDatesData } = useReleaseDates();
-
-  const upcomingReleases = (releaseDatesData?.release_dates ?? []).slice(0, 8);
+  const {
+    data: releaseDatesData,
+    isError: releasesError,
+    refetch: refetchReleases,
+  } = useReleaseDates();
+  const today = new Date().toISOString().slice(0, 10);
+  const releaseDates = releaseDatesData?.release_dates ?? [];
+  const futureReleases = releaseDates
+    .filter((release) => release.date >= today)
+    .sort((left, right) => left.date.localeCompare(right.date))
+    .slice(0, 4);
+  const recentReleases = releaseDates
+    .filter((release) => release.date < today)
+    .sort((left, right) => right.date.localeCompare(left.date))
+    .slice(0, 8 - futureReleases.length);
+  const upcomingReleases = [...futureReleases, ...recentReleases];
 
   if (!hydrated) {
     return (
@@ -94,6 +107,17 @@ export default function DashboardPage() {
       )}
 
       {/* Recent releases strip */}
+      {releasesError && (
+        <div className="rounded-xl px-4 py-3 text-sm" role="alert" style={{
+          color: 'var(--red)',
+          border: '1px solid color-mix(in srgb, var(--red) 35%, transparent)',
+        }}>
+          Release calendar unavailable.{' '}
+          <button className="font-medium underline" onClick={() => void refetchReleases()}>
+            Retry
+          </button>
+        </div>
+      )}
       {upcomingReleases.length > 0 && (
         <section>
           <div className="flex items-center justify-between mb-3">

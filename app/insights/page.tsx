@@ -32,11 +32,14 @@ function InsightsPageInner() {
   const router = useRouter();
   const pathname = usePathname();
 
-  const selectedIds = (searchParams.get('ids') ?? '')
-    .split(',')
-    .map((s) => s.trim())
-    .filter((id) => /^[A-Z0-9_-]{1,30}$/.test(id))
-    .slice(0, MAX_SERIES);
+  const selectedIds = [
+    ...new Set(
+      (searchParams.get('ids') ?? '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter((id) => /^[A-Z0-9_-]{1,30}$/.test(id)),
+    ),
+  ].slice(0, MAX_SERIES);
 
   const range = parseObservationRange(searchParams.get('range'));
 

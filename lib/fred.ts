@@ -157,6 +157,12 @@ export const TRANSFORM_MAP: Record<FredUnits, TransformOption> = Object.fromEntr
 /** Axis / tooltip units for a series once a transform is applied. */
 export function transformedUnits(seriesUnits: string, units: FredUnits): string {
   const t = TRANSFORM_MAP[units];
+  if (
+    (units === 'chg' || units === 'ch1') &&
+    (seriesUnits.includes('%') || /percent/i.test(seriesUnits))
+  ) {
+    return 'Percentage points';
+  }
   if (!t || t.unitsLabel === null) return seriesUnits;
   if (units === 'log') return seriesUnits ? `log(${seriesUnits})` : 'log';
   return t.unitsLabel;
@@ -233,11 +239,12 @@ export interface ObservationOptions {
 async function fredFetch<T>(
   path: string,
   params: Record<string, string> = {},
+  signal?: AbortSignal,
 ): Promise<T> {
   const searchParams = new URLSearchParams(params);
   const url = `/api/fred/${path}?${searchParams.toString()}`;
 
-  const res = await fetch(url);
+  const res = await fetch(url, { signal });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(
@@ -291,6 +298,7 @@ export async function searchSeries(
   offset = 0,
   limit = 20,
   orderBy: 'popularity' | 'last_updated' | 'title' = 'popularity',
+  signal?: AbortSignal,
 ) {
   return fredFetch<{
     seriess: FredSeries[];
@@ -303,17 +311,22 @@ export async function searchSeries(
     limit: String(limit),
     order_by: orderBy,
     sort_order: orderBy === 'title' ? 'asc' : 'desc',
-  });
+  }, signal);
 }
 
-export async function getSeries(seriesId: string) {
-  return fredFetch<{ seriess: FredSeries[] }>('series', { series_id: seriesId });
+export async function getSeries(seriesId: string, signal?: AbortSignal) {
+  return fredFetch<{ seriess: FredSeries[] }>(
+    'series',
+    { series_id: seriesId },
+    signal,
+  );
 }
 
 export async function getObservations(
   seriesId: string,
   range: ObservationRange = 'max',
   options: ObservationOptions = {},
+  signal?: AbortSignal,
 ) {
   const units = options.units ?? 'lin';
   const maxObservations =
@@ -342,6 +355,7 @@ export async function getObservations(
   const data = await fredFetch<{ observations: FredObservation[]; count: number }>(
     'series/observations',
     params,
+    signal,
   );
 
   let observations = maxObservations
@@ -360,19 +374,23 @@ export async function getObservations(
 
 // ─── Categories ────────────────────────────────────────────────────────────────
 
-export async function getCategory(categoryId: number) {
+export async function getCategory(categoryId: number, signal?: AbortSignal) {
   return fredFetch<{ categories: FredCategory[] }>('category', {
     category_id: String(categoryId),
-  });
+  }, signal);
 }
 
-export async function getCategoryChildren(categoryId: number) {
+export async function getCategoryChildren(categoryId: number, signal?: AbortSignal) {
   return fredFetch<{ categories: FredCategory[] }>('category/children', {
     category_id: String(categoryId),
-  });
+  }, signal);
 }
 
-export async function getCategorySeries(categoryId: number, offset = 0) {
+export async function getCategorySeries(
+  categoryId: number,
+  offset = 0,
+  signal?: AbortSignal,
+) {
   return fredFetch<{
     seriess: FredSeries[];
     count: number;
@@ -384,12 +402,12 @@ export async function getCategorySeries(categoryId: number, offset = 0) {
     limit: '20',
     order_by: 'popularity',
     sort_order: 'desc',
-  });
+  }, signal);
 }
 
 // ─── Releases ──────────────────────────────────────────────────────────────────
 
-export async function getReleases(offset = 0) {
+export async function getReleases(offset = 0, signal?: AbortSignal) {
   return fredFetch<{
     releases: FredRelease[];
     count: number;
@@ -400,13 +418,13 @@ export async function getReleases(offset = 0) {
     limit: '50',
     order_by: 'name',
     sort_order: 'asc',
-  });
+  }, signal);
 }
 
-export async function getReleaseDates(limit = 100) {
+export async function getReleaseDates(limit = 100, signal?: AbortSignal) {
   return fredFetch<{ release_dates: FredReleaseDate[] }>('releases/dates', {
     limit: String(limit),
-    include_release_dates_with_no_data: 'false',
+    include_release_dates_with_no_data: 'true',
     sort_order: 'desc',
-  });
+  }, signal);
 }

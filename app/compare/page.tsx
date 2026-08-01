@@ -63,11 +63,14 @@ function ComparePageInner() {
   const router = useRouter();
   const pathname = usePathname();
 
-  const selectedIds = (searchParams.get('ids') ?? '')
-    .split(',')
-    .map((s) => s.trim())
-    .filter((id) => /^[A-Z0-9_-]{1,30}$/.test(id))
-    .slice(0, MAX_SERIES);
+  const selectedIds = [
+    ...new Set(
+      (searchParams.get('ids') ?? '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter((id) => /^[A-Z0-9_-]{1,30}$/.test(id)),
+    ),
+  ].slice(0, MAX_SERIES);
 
   const range = parseObservationRange(searchParams.get('range'));
 
@@ -169,11 +172,10 @@ function ComparePageInner() {
     updateUrl(selectedIds, { normalize: n });
   }
 
-  // Flatten all valid observations for multi-export (uses the same transformed +
-  // normalized data that is on screen).
-  const allObservations = datasets.flatMap((d) =>
-    d.observations.filter((o) => o.value !== '.'),
-  );
+  const exportDatasets = datasets.map((dataset) => ({
+    ...dataset,
+    units: normalizedUnits(dataset.units, normalize),
+  }));
 
   return (
     <div className="flex flex-col gap-6">
@@ -384,11 +386,12 @@ function ComparePageInner() {
           <NormalizeControl mode={normalize} onChange={setNormalize} />
         </div>
 
-        {datasets.length > 0 && allObservations.length > 0 && (
+        {exportDatasets.length > 0 && (
           <ExportButton
             seriesId={selectedIds.join('_')}
-            title={`Compare: ${selectedIds.join(', ')}${transformSuffix(units)}`}
-            observations={allObservations}
+            title={`Compare: ${selectedIds.join(', ')}${transformSuffix(units)} — ${NORMALIZE_MAP[normalize].label}`}
+            observations={[]}
+            datasets={exportDatasets}
           />
         )}
       </div>
@@ -471,7 +474,7 @@ function ComparePageInner() {
           datasets={datasets.map((d): AnalyzeDataset => ({
             seriesId: d.seriesId,
             label: d.label,
-            units: d.units,
+            units: normalizedUnits(d.units, normalize),
             observations: d.observations,
           }))}
           title="AI Insights — Multi-Series Analysis"

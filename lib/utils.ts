@@ -58,6 +58,68 @@ function triggerDownload(content: string, filename: string, mime: string) {
   URL.revokeObjectURL(url);
 }
 
+export interface ExportDataset {
+  seriesId: string;
+  label: string;
+  units: string;
+  observations: { date: string; value: string }[];
+}
+
+function csvCell(value: string): string {
+  return `"${value.replaceAll('"', '""')}"`;
+}
+
+export function datasetsToCSV(datasets: ExportDataset[]): string {
+  const rows = ['Date,Series ID,Title,Units,Value'];
+  for (const dataset of datasets) {
+    for (const observation of dataset.observations) {
+      if (observation.value === '.' || observation.value === '') continue;
+      rows.push([
+        observation.date,
+        csvCell(dataset.seriesId),
+        csvCell(dataset.label),
+        csvCell(dataset.units),
+        observation.value,
+      ].join(','));
+    }
+  }
+  return rows.join('\n');
+}
+
+export function exportDatasetsToCSV(filename: string, datasets: ExportDataset[]) {
+  triggerDownload(
+    datasetsToCSV(datasets),
+    `${filename}.csv`,
+    'text/csv;charset=utf-8;',
+  );
+}
+
+export function exportDatasetsToJSON(
+  filename: string,
+  title: string,
+  datasets: ExportDataset[],
+) {
+  triggerDownload(
+    JSON.stringify({
+      title,
+      exported_at: new Date().toISOString(),
+      datasets: datasets.map((dataset) => ({
+        series_id: dataset.seriesId,
+        title: dataset.label,
+        units: dataset.units,
+        observations: dataset.observations
+          .filter((observation) => observation.value !== '.' && observation.value !== '')
+          .map((observation) => ({
+            date: observation.date,
+            value: Number(observation.value),
+          })),
+      })),
+    }, null, 2),
+    `${filename}.json`,
+    'application/json',
+  );
+}
+
 export function exportToCSV(
   seriesId: string,
   title: string,

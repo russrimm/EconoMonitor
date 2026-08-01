@@ -44,8 +44,8 @@ export function MetricCard({ seriesId, isPinned, onToggle }: Props) {
   if (latest && prev) {
     const l = parseFloat(latest.value);
     const p = parseFloat(prev.value);
-    if (!isNaN(l) && !isNaN(p) && p !== 0) {
-      pct = ((l - p) / Math.abs(p)) * 100;
+    if (!isNaN(l) && !isNaN(p) && p > 0 && l >= 0) {
+      pct = ((l - p) / p) * 100;
       up = pct >= 0;
     }
   }

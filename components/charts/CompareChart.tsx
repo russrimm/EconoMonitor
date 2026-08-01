@@ -68,7 +68,7 @@ export function CompareChart({ datasets, sharedAxisLabel = null, baseline = null
 
   const shared = sharedAxisLabel !== null;
 
-  // Determine which units go on which y-axis (max 2 axes)
+  // Give every native unit group its own labelled axis.
   const unitGroups: string[] = [];
   datasets.forEach((d) => {
     if (!unitGroups.includes(d.units)) unitGroups.push(d.units);
@@ -80,7 +80,8 @@ export function CompareChart({ datasets, sharedAxisLabel = null, baseline = null
       .filter((o) => o.value !== '.' && o.value !== '')
       .map((o) => ({ x: o.date, y: parseFloat(o.value) }));
 
-    const axisId = shared || unitGroups.indexOf(d.units) === 0 ? 'y' : 'y1';
+    const unitIndex = unitGroups.indexOf(d.units);
+    const axisId = shared || unitIndex === 0 ? 'y' : `y${unitIndex}`;
 
     return {
       label: `${d.seriesId} — ${d.label}`,
@@ -129,11 +130,13 @@ export function CompareChart({ datasets, sharedAxisLabel = null, baseline = null
   };
 
   if (!shared && unitGroups.length > 1) {
-    scales.y1 = {
-      position: 'right',
+    unitGroups.slice(1).forEach((unit, index) => {
+      const axisIndex = index + 1;
+      scales[`y${axisIndex}`] = {
+      position: axisIndex % 2 === 1 ? 'right' : 'left',
       title: {
         display: true,
-        text: unitGroups[1],
+        text: unit,
         color: tickColor,
         font: { size: 11 },
       },
@@ -146,6 +149,7 @@ export function CompareChart({ datasets, sharedAxisLabel = null, baseline = null
             : v,
       },
     };
+    });
   }
 
   return (
@@ -173,6 +177,16 @@ export function CompareChart({ datasets, sharedAxisLabel = null, baseline = null
             titleColor: tooltipTxt,
             bodyColor: tooltipMut,
             padding: 10,
+            callbacks: {
+              label: (context) => {
+                const dataset = datasets[context.datasetIndex];
+                const value = context.parsed.y ?? 0;
+                const unit = sharedAxisLabel ?? dataset.units;
+                return `${dataset.seriesId}: ${value.toLocaleString('en-US', {
+                  maximumFractionDigits: 4,
+                })}${unit ? ` ${unit}` : ''}`;
+              },
+            },
           },
         },
         scales,
