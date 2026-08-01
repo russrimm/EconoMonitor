@@ -259,7 +259,14 @@ test('upstream observability emits redacted terminal events for every outcome', 
   };
   const rejectOnAbort = (_input, init) =>
     new Promise((_resolve, reject) => {
-      const rejectAbort = () => reject(new DOMException('request aborted', 'AbortError'));
+      const watchdog = setTimeout(
+        () => reject(new Error('fetch mock was not aborted')),
+        100,
+      );
+      const rejectAbort = () => {
+        clearTimeout(watchdog);
+        reject(new DOMException('request aborted', 'AbortError'));
+      };
       if (init.signal.aborted) rejectAbort();
       else init.signal.addEventListener('abort', rejectAbort, { once: true });
     });
