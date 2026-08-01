@@ -1,7 +1,14 @@
 'use client';
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { prepareDatasetsForAnalysis, type AnalyzeDataset } from '@/lib/ai';
+import {
+  readBoundedResponseChunks,
+  readBoundedResponseText,
+  withDeadline,
+} from '@/lib/responseBody';
+
+const MAX_RESPONSE_BYTES = 128 * 1024;
 
 export interface UseAiAnalysisResult {
   analyze: (datasets: AnalyzeDataset[]) => Promise<void>;
@@ -16,6 +23,7 @@ export function useAiAnalysis(): UseAiAnalysisResult {
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   const reset = useCallback(() => {
     abortRef.current?.abort();
@@ -39,30 +47,39 @@ export function useAiAnalysis(): UseAiAnalysisResult {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ datasets: prepareDatasetsForAnalysis(datasets) }),
-        signal: controller.signal,
+        signal: withDeadline(controller.signal, 75_000),
       });
 
       if (!res.ok) {
-        const msg = await res.text();
+        const msg = await readBoundedResponseText(res, 4 * 1024);
+        if (abortRef.current !== controller) return;
         setError(msg || `Request failed (${res.status})`);
         return;
       }
 
-      const reader = res.body!.getReader();
       const decoder = new TextDecoder();
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+      for await (const value of readBoundedResponseChunks(res, MAX_RESPONSE_BYTES)) {
         const chunk = decoder.decode(value, { stream: true });
-        setText((prev) => prev + chunk);
+        if (abortRef.current === controller) {
+          setText((prev) => prev + chunk);
+        }
+      }
+      const finalChunk = decoder.decode();
+      if (finalChunk && abortRef.current === controller) {
+        setText((prev) => prev + finalChunk);
       }
     } catch (err) {
       if ((err as { name?: string }).name !== 'AbortError') {
-        setError((err as Error).message ?? 'Unknown error');
+        if (abortRef.current === controller) {
+          setError((err as Error).message ?? 'Unknown error');
+        }
       }
     } finally {
-      setIsStreaming(false);
+      if (abortRef.current === controller) {
+        abortRef.current = null;
+        setIsStreaming(false);
+      }
     }
   }, []);
 

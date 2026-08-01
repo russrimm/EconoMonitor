@@ -63,11 +63,14 @@ function ComparePageInner() {
   const router = useRouter();
   const pathname = usePathname();
 
-  const selectedIds = (searchParams.get('ids') ?? '')
-    .split(',')
-    .map((s) => s.trim())
-    .filter((id) => /^[A-Z0-9_-]{1,30}$/.test(id))
-    .slice(0, MAX_SERIES);
+  const selectedIds = [
+    ...new Set(
+      (searchParams.get('ids') ?? '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter((id) => /^[A-Z0-9_-]{1,30}$/.test(id)),
+    ),
+  ].slice(0, MAX_SERIES);
 
   const range = parseObservationRange(searchParams.get('range'));
 
@@ -169,11 +172,10 @@ function ComparePageInner() {
     updateUrl(selectedIds, { normalize: n });
   }
 
-  // Flatten all valid observations for multi-export (uses the same transformed +
-  // normalized data that is on screen).
-  const allObservations = datasets.flatMap((d) =>
-    d.observations.filter((o) => o.value !== '.'),
-  );
+  const exportDatasets = datasets.map((dataset) => ({
+    ...dataset,
+    units: normalizedUnits(dataset.units, normalize),
+  }));
 
   return (
     <div className="flex flex-col gap-6">
@@ -228,7 +230,7 @@ function ComparePageInner() {
                 setSearchQuery('');
               }}
               title="Browse pinned series"
-              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded transition-colors flex items-center gap-0.5"
+              className="absolute right-2 top-1/2 -translate-y-1/2 min-h-6 min-w-6 p-1 rounded transition-colors flex items-center justify-center gap-0.5"
               style={{ color: 'var(--text-muted)' }}
             >
               <Pin className="w-3 h-3" />
@@ -338,7 +340,7 @@ function ComparePageInner() {
               className="flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-medium"
               style={{
                 background: 'color-mix(in srgb,' + CHART_COLORS[i % CHART_COLORS.length] + ' 15%, transparent)',
-                color: CHART_COLORS[i % CHART_COLORS.length],
+                color: 'var(--text)',
                 border: '1px solid ' + CHART_COLORS[i % CHART_COLORS.length] + '44',
               }}
             >
@@ -384,11 +386,12 @@ function ComparePageInner() {
           <NormalizeControl mode={normalize} onChange={setNormalize} />
         </div>
 
-        {datasets.length > 0 && allObservations.length > 0 && (
+        {exportDatasets.length > 0 && (
           <ExportButton
             seriesId={selectedIds.join('_')}
-            title={`Compare: ${selectedIds.join(', ')}${transformSuffix(units)}`}
-            observations={allObservations}
+            title={`Compare: ${selectedIds.join(', ')}${transformSuffix(units)} — ${NORMALIZE_MAP[normalize].label}`}
+            observations={[]}
+            datasets={exportDatasets}
           />
         )}
       </div>
@@ -471,7 +474,7 @@ function ComparePageInner() {
           datasets={datasets.map((d): AnalyzeDataset => ({
             seriesId: d.seriesId,
             label: d.label,
-            units: d.units,
+            units: normalizedUnits(d.units, normalize),
             observations: d.observations,
           }))}
           title="AI Insights — Multi-Series Analysis"

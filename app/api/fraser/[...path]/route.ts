@@ -1,8 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
+  fraserOperationName,
   hasAcceptableQueryLength,
   isAllowedFraserPath,
+  validateFraserQuery,
 } from '@/lib/apiProxy';
+import {
+  fetchUpstream,
+  logInvalidPayload,
+  logUpstreamSuccess,
+  readLimitedJson,
+} from '@/lib/upstream';
+import { validateFraserPayload } from '@/lib/upstreamSchemas';
 
 const FRASER_BASE = 'https://fraser.stlouisfed.org/api';
 
@@ -32,6 +41,13 @@ export async function GET(
       { status: 414, headers: { 'Cache-Control': 'no-store' } },
     );
   }
+  const queryError = validateFraserQuery(request.nextUrl.searchParams);
+  if (queryError) {
+    return NextResponse.json(
+      { error: queryError },
+      { status: 400, headers: { 'Cache-Control': 'no-store' } },
+    );
+  }
 
   const fraserUrl = new URL(`${FRASER_BASE}/${fraserPath}`);
 
@@ -44,31 +60,42 @@ export async function GET(
   fraserUrl.searchParams.set('format', 'json');
 
   try {
-    const upstream = await fetch(fraserUrl.toString(), {
+    const upstream = await fetchUpstream(fraserUrl, {
       headers: {
         Accept: 'application/json',
         'X-API-Key': apiKey, // FRASER auth is header-based, not a query param
       },
-      next: { revalidate: 3600 }, // Archival content rarely changes — 1-hour cache
+      cache: 'no-store',
       signal: request.signal,
+    }, {
+      service: 'fraser',
+      operation: fraserOperationName(fraserPath),
+      timeoutMs: 15_000,
+      cachePolicy: 'no-store',
     });
 
     if (!upstream.ok) {
-      console.error(`[FRASER proxy] upstream returned ${upstream.status}`);
       return NextResponse.json(
         { error: `FRASER API responded with ${upstream.status}` },
         { status: upstream.status, headers: { 'Cache-Control': 'no-store' } },
       );
     }
 
-    const data = await upstream.json();
+    const data = await readLimitedJson(upstream, 5 * 1024 * 1024);
+    if (!validateFraserPayload(fraserPath, data)) {
+      logInvalidPayload(upstream);
+      return NextResponse.json(
+        { error: 'FRASER API returned malformed data. Try again later.' },
+        { status: 502, headers: { 'Cache-Control': 'no-store' } },
+      );
+    }
+    logUpstreamSuccess(upstream);
     return NextResponse.json(data, {
       headers: {
         'Cache-Control': 'public, s-maxage=3600, stale-while-revalidate=86400',
       },
     });
-  } catch (err) {
-    console.error('[FRASER proxy] fetch failed:', err);
+  } catch {
     return NextResponse.json(
       { error: 'Failed to reach FRASER API' },
       { status: 502, headers: { 'Cache-Control': 'no-store' } },

@@ -55,6 +55,8 @@ export function CustomIndicatorChart({ points, label, units = '', color = '#8b5c
 
   return (
     <Line
+      role="img"
+      aria-label={`${label} chart`}
       data={{
         datasets: [
           {

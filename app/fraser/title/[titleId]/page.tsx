@@ -20,6 +20,7 @@ import {
   extractNameParts,
   type FraserRecord,
 } from '@/lib/fraser';
+import { QueryError } from '@/components/QueryError';
 
 const PAGE_SIZE = 20;
 
@@ -113,7 +114,12 @@ export default function TitlePage() {
       </Link>
 
       {/* Title header */}
-      {titleQuery.isLoading ? (
+      {titleQuery.isError ? (
+        <QueryError
+          message="Title details could not be loaded."
+          onRetry={() => void titleQuery.refetch()}
+        />
+      ) : titleQuery.isLoading ? (
         <div className="flex flex-col gap-2">
           <div className="h-8 w-3/4 rounded animate-pulse" style={{ background: 'var(--surface)' }} />
           <div className="h-4 w-1/2 rounded animate-pulse" style={{ background: 'var(--surface)' }} />
@@ -209,16 +215,10 @@ export default function TitlePage() {
         </div>
 
         {itemsQuery.error && (
-          <div
-            className="rounded-xl px-4 py-3 text-sm"
-            style={{
-              background: 'color-mix(in srgb, var(--red) 10%, transparent)',
-              color: 'var(--red)',
-              border: '1px solid color-mix(in srgb, var(--red) 30%, transparent)',
-            }}
-          >
-            Failed to load items.
-          </div>
+          <QueryError
+            message="Title items could not be loaded."
+            onRetry={() => void itemsQuery.refetch()}
+          />
         )}
 
         <div
@@ -233,7 +233,9 @@ export default function TitlePage() {
                   style={{ background: 'var(--surface-2)' }}
                 />
               ))
-            : items.map((item, i) => <ItemRow key={i} item={item} />)}
+            : itemsQuery.isError
+              ? null
+              : items.map((item, i) => <ItemRow key={i} item={item} />)}
         </div>
 
         {/* Pagination */}

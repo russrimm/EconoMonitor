@@ -27,8 +27,13 @@ function formatTableValue(value: string): string {
 
 export function ChartDataTable({ title, datasets }: Props) {
   const [expanded, setExpanded] = useState(false);
-  const totalPoints = datasets.reduce(
-    (sum, dataset) => sum + dataset.observations.length,
+  const totalValidPoints = datasets.reduce(
+    (sum, dataset) =>
+      sum +
+      dataset.observations.filter(
+        (observation) =>
+          observation.value !== '.' && observation.value !== '',
+      ).length,
     0,
   );
   const rows = expanded
@@ -43,7 +48,7 @@ export function ChartDataTable({ title, datasets }: Props) {
           .map((observation) => ({ dataset, observation })),
       )
     : [];
-  const isTruncated = rows.length < totalPoints;
+  const isTruncated = rows.length < totalValidPoints;
 
   return (
     <details

@@ -6,6 +6,7 @@ import { readLimitedJson, RequestBodyError } from '@/lib/http';
 export const runtime = 'nodejs';
 
 const MAX_BODY_BYTES = 96 * 1024;
+const PROVIDER_TIMEOUT_MS = 60_000;
 const RESPONSE_HEADERS = {
   'Cache-Control': 'no-store',
   'X-Content-Type-Options': 'nosniff',
@@ -28,17 +29,6 @@ Guidelines:
 - Keep responses focused on economics, finance, and related policy topics.`;
 
 export async function POST(req: NextRequest) {
-  const githubToken = process.env.GITHUB_TOKEN;
-  const azureEndpoint = process.env.AZURE_OPENAI_ENDPOINT;
-  const azureKey = process.env.AZURE_OPENAI_API_KEY;
-  const azureDeployment = process.env.AZURE_OPENAI_DEPLOYMENT ?? 'gpt-4o';
-
-  const useAzure = Boolean(azureEndpoint && azureKey);
-
-  if (!useAzure && !githubToken) {
-    return textResponse('AI chat is not configured. Add GITHUB_TOKEN to .env.local.', 503);
-  }
-
   let body: unknown;
   try {
     body = await readLimitedJson(req, MAX_BODY_BYTES);
@@ -51,6 +41,15 @@ export async function POST(req: NextRequest) {
 
   const validation = validateChatMessages(body);
   if (!validation.ok) return textResponse(validation.error, 400);
+
+  const githubToken = process.env.GITHUB_TOKEN;
+  const azureEndpoint = process.env.AZURE_OPENAI_ENDPOINT;
+  const azureKey = process.env.AZURE_OPENAI_API_KEY;
+  const azureDeployment = process.env.AZURE_OPENAI_DEPLOYMENT ?? 'gpt-4o';
+  const useAzure = Boolean(azureEndpoint && azureKey);
+  if (!useAzure && !githubToken) {
+    return textResponse('AI chat is not configured. Add GITHUB_TOKEN to .env.local.', 503);
+  }
 
   const client = useAzure
     ? new OpenAI({
@@ -65,6 +64,10 @@ export async function POST(req: NextRequest) {
       });
 
   const model = useAzure ? azureDeployment : 'gpt-4o';
+  const providerSignal = AbortSignal.any([
+    req.signal,
+    AbortSignal.timeout(PROVIDER_TIMEOUT_MS),
+  ]);
 
   const createStream = () =>
     client.chat.completions.create(
@@ -78,7 +81,7 @@ export async function POST(req: NextRequest) {
           ...validation.value,
         ],
       },
-      { signal: req.signal },
+      { signal: providerSignal },
     );
   let stream: Awaited<ReturnType<typeof createStream>>;
   try {

@@ -32,11 +32,14 @@ function InsightsPageInner() {
   const router = useRouter();
   const pathname = usePathname();
 
-  const selectedIds = (searchParams.get('ids') ?? '')
-    .split(',')
-    .map((s) => s.trim())
-    .filter((id) => /^[A-Z0-9_-]{1,30}$/.test(id))
-    .slice(0, MAX_SERIES);
+  const selectedIds = [
+    ...new Set(
+      (searchParams.get('ids') ?? '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter((id) => /^[A-Z0-9_-]{1,30}$/.test(id)),
+    ),
+  ].slice(0, MAX_SERIES);
 
   const range = parseObservationRange(searchParams.get('range'));
 
@@ -159,7 +162,7 @@ function InsightsPageInner() {
                 setSearchQuery('');
               }}
               title="Browse pinned series"
-              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded transition-colors flex items-center gap-0.5"
+              className="absolute right-2 top-1/2 -translate-y-1/2 min-h-6 min-w-6 p-1 rounded transition-colors flex items-center justify-center gap-0.5"
               style={{ color: 'var(--text-muted)' }}
             >
               <Pin className="w-3 h-3" />
@@ -273,7 +276,7 @@ function InsightsPageInner() {
               style={{
                 background:
                   'color-mix(in srgb,' + CHART_COLORS[i % CHART_COLORS.length] + ' 15%, transparent)',
-                color: CHART_COLORS[i % CHART_COLORS.length],
+                color: 'var(--text)',
                 border: '1px solid ' + CHART_COLORS[i % CHART_COLORS.length] + '44',
               }}
             >

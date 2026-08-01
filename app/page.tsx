@@ -5,13 +5,26 @@ import Link from 'next/link';
 import { usePinnedSeries } from '@/hooks/usePinnedSeries';
 import { useReleaseDates } from '@/hooks/useFredQuery';
 import { MetricCard } from '@/components/dashboard/MetricCard';
-import { formatDate } from '@/lib/utils';
+import { formatDate, localCalendarDate } from '@/lib/utils';
 
 export default function DashboardPage() {
   const { pinned, toggle, isPinned, hydrated } = usePinnedSeries();
-  const { data: releaseDatesData } = useReleaseDates();
-
-  const upcomingReleases = (releaseDatesData?.release_dates ?? []).slice(0, 8);
+  const {
+    data: releaseDatesData,
+    isError: releasesError,
+    refetch: refetchReleases,
+  } = useReleaseDates();
+  const today = localCalendarDate();
+  const releaseDates = releaseDatesData?.release_dates ?? [];
+  const futureReleases = releaseDates
+    .filter((release) => release.date >= today)
+    .sort((left, right) => left.date.localeCompare(right.date))
+    .slice(0, 4);
+  const recentReleases = releaseDates
+    .filter((release) => release.date < today)
+    .sort((left, right) => right.date.localeCompare(left.date))
+    .slice(0, 8 - futureReleases.length);
+  const upcomingReleases = [...futureReleases, ...recentReleases];
 
   if (!hydrated) {
     return (
@@ -47,7 +60,7 @@ export default function DashboardPage() {
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium"
           style={{
             background: 'color-mix(in srgb, var(--accent) 12%, transparent)',
-            color: 'var(--accent)',
+            color: 'var(--accent-hover)',
             border: '1px solid color-mix(in srgb, var(--accent) 30%, transparent)',
           }}
         >
@@ -94,6 +107,17 @@ export default function DashboardPage() {
       )}
 
       {/* Recent releases strip */}
+      {releasesError && (
+        <div className="rounded-xl px-4 py-3 text-sm" role="alert" style={{
+          color: 'var(--red)',
+          border: '1px solid color-mix(in srgb, var(--red) 35%, transparent)',
+        }}>
+          Release calendar unavailable.{' '}
+          <button className="font-medium underline" onClick={() => void refetchReleases()}>
+            Retry
+          </button>
+        </div>
+      )}
       {upcomingReleases.length > 0 && (
         <section>
           <div className="flex items-center justify-between mb-3">
@@ -122,13 +146,13 @@ export default function DashboardPage() {
                 <tr>
                   <th
                     className="text-left px-4 py-2 font-medium text-xs uppercase tracking-wide"
-                    style={{ color: 'var(--text-muted)' }}
+                    style={{ color: 'var(--text)' }}
                   >
                     Release
                   </th>
                   <th
                     className="text-right px-4 py-2 font-medium text-xs uppercase tracking-wide"
-                    style={{ color: 'var(--text-muted)' }}
+                    style={{ color: 'var(--text)' }}
                   >
                     Date
                   </th>

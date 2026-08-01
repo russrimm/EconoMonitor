@@ -2,7 +2,15 @@ import { NextRequest, NextResponse } from 'next/server';
 import {
   hasAcceptableQueryLength,
   isAllowedFredPath,
+  validateFredQuery,
 } from '@/lib/apiProxy';
+import {
+  fetchUpstream,
+  logInvalidPayload,
+  logUpstreamSuccess,
+  readLimitedJson,
+} from '@/lib/upstream';
+import { validateFredPayload } from '@/lib/upstreamSchemas';
 
 const FRED_BASE = 'https://api.stlouisfed.org/fred';
 
@@ -32,6 +40,13 @@ export async function GET(
       { status: 414, headers: { 'Cache-Control': 'no-store' } },
     );
   }
+  const queryError = validateFredQuery(fredPath, request.nextUrl.searchParams);
+  if (queryError) {
+    return NextResponse.json(
+      { error: queryError },
+      { status: 400, headers: { 'Cache-Control': 'no-store' } },
+    );
+  }
 
   // Build upstream FRED URL
   const fredUrl = new URL(`${FRED_BASE}/${fredPath}`);
@@ -48,28 +63,41 @@ export async function GET(
   fredUrl.searchParams.set('file_type', 'json');
 
   try {
-    const upstream = await fetch(fredUrl.toString(), {
+    const upstream = await fetchUpstream(fredUrl, {
       headers: { Accept: 'application/json' },
-      next: { revalidate: 300 }, // Next.js data-cache: 5 minutes
+      cache: 'no-store',
       signal: request.signal,
+    }, {
+      service: 'fred',
+      operation: fredPath,
+      timeoutMs: 15_000,
+      cachePolicy: 'no-store',
     });
 
     if (!upstream.ok) {
-      console.error(`[FRED proxy] upstream returned ${upstream.status}`);
       return NextResponse.json(
         { error: `FRED API returned ${upstream.status}` },
         { status: upstream.status, headers: { 'Cache-Control': 'no-store' } },
       );
     }
 
-    const data = await upstream.json();
+    const maximumBytes =
+      fredPath === 'series/observations' ? 25 * 1024 * 1024 : 5 * 1024 * 1024;
+    const data = await readLimitedJson(upstream, maximumBytes);
+    if (!validateFredPayload(fredPath, data)) {
+      logInvalidPayload(upstream);
+      return NextResponse.json(
+        { error: 'FRED API returned malformed data. Try again later.' },
+        { status: 502, headers: { 'Cache-Control': 'no-store' } },
+      );
+    }
+    logUpstreamSuccess(upstream);
     return NextResponse.json(data, {
       headers: {
         'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=60',
       },
     });
-  } catch (err) {
-    console.error('[FRED proxy] fetch failed:', err);
+  } catch {
     return NextResponse.json(
       { error: 'Failed to contact the FRED API. Try again later.' },
       { status: 502, headers: { 'Cache-Control': 'no-store' } },

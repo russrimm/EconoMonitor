@@ -50,7 +50,8 @@ Before starting, install the following tools on your machine. All of them are fr
 
 ### Node.js (JavaScript Runtime)
 
-Next.js runs on Node.js. You need **version 18.18 or later** (version 24 LTS recommended).
+Next.js runs on Node.js. Use **Node.js 22 LTS or later**; CI and production
+currently use Node.js 22.
 
 1. Go to **https://nodejs.org**
 2. Click **"LTS"** (Long-Term Support) — this is the most stable version

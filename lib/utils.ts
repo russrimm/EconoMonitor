@@ -8,6 +8,13 @@ export function formatDate(dateStr: string): string {
   });
 }
 
+export function localCalendarDate(date = new Date()): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 export function formatDateShort(dateStr: string): string {
   return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', {
     year: 'numeric',
@@ -56,6 +63,68 @@ function triggerDownload(content: string, filename: string, mime: string) {
   a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+export interface ExportDataset {
+  seriesId: string;
+  label: string;
+  units: string;
+  observations: { date: string; value: string }[];
+}
+
+function csvCell(value: string): string {
+  return `"${value.replaceAll('"', '""')}"`;
+}
+
+export function datasetsToCSV(datasets: ExportDataset[]): string {
+  const rows = ['Date,Series ID,Title,Units,Value'];
+  for (const dataset of datasets) {
+    for (const observation of dataset.observations) {
+      if (observation.value === '.' || observation.value === '') continue;
+      rows.push([
+        observation.date,
+        csvCell(dataset.seriesId),
+        csvCell(dataset.label),
+        csvCell(dataset.units),
+        observation.value,
+      ].join(','));
+    }
+  }
+  return rows.join('\n');
+}
+
+export function exportDatasetsToCSV(filename: string, datasets: ExportDataset[]) {
+  triggerDownload(
+    datasetsToCSV(datasets),
+    `${filename}.csv`,
+    'text/csv;charset=utf-8;',
+  );
+}
+
+export function exportDatasetsToJSON(
+  filename: string,
+  title: string,
+  datasets: ExportDataset[],
+) {
+  triggerDownload(
+    JSON.stringify({
+      title,
+      exported_at: new Date().toISOString(),
+      datasets: datasets.map((dataset) => ({
+        series_id: dataset.seriesId,
+        title: dataset.label,
+        units: dataset.units,
+        observations: dataset.observations
+          .filter((observation) => observation.value !== '.' && observation.value !== '')
+          .map((observation) => ({
+            date: observation.date,
+            value: Number(observation.value),
+          })),
+      })),
+    }, null, 2),
+    `${filename}.json`,
+    'application/json',
+  );
 }
 
 export function exportToCSV(

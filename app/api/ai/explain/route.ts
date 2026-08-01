@@ -8,6 +8,7 @@ export const runtime = 'nodejs';
 
 const TWO_YEARS_MS = 1000 * 60 * 60 * 24 * 365 * 2;
 const MAX_BODY_BYTES = 64 * 1024;
+const PROVIDER_TIMEOUT_MS = 60_000;
 const RESPONSE_HEADERS = {
   'Cache-Control': 'no-store',
   'X-Content-Type-Options': 'nosniff',
@@ -77,19 +78,6 @@ function buildSystemPrompt(): string {
 }
 
 export async function POST(req: NextRequest) {
-  const githubToken = process.env.GITHUB_TOKEN;
-  const azureEndpoint = process.env.AZURE_OPENAI_ENDPOINT;
-  const azureKey = process.env.AZURE_OPENAI_API_KEY;
-  const azureDeployment = process.env.AZURE_OPENAI_DEPLOYMENT ?? 'gpt-4o';
-  const useAzure = Boolean(azureEndpoint && azureKey);
-
-  if (!useAzure && !githubToken) {
-    return textResponse(
-      'AI explanation is not configured. Set GITHUB_TOKEN (or AZURE_OPENAI_ENDPOINT + AZURE_OPENAI_API_KEY) in your environment variables.',
-      503,
-    );
-  }
-
   let body: unknown;
   try {
     body = await readLimitedJson(req, MAX_BODY_BYTES);
@@ -103,6 +91,18 @@ export async function POST(req: NextRequest) {
   const validation = validateExplainBody(body);
   if (!validation.ok) return textResponse(validation.error, 400);
   const safeBody = validation.value;
+
+  const githubToken = process.env.GITHUB_TOKEN;
+  const azureEndpoint = process.env.AZURE_OPENAI_ENDPOINT;
+  const azureKey = process.env.AZURE_OPENAI_API_KEY;
+  const azureDeployment = process.env.AZURE_OPENAI_DEPLOYMENT ?? 'gpt-4o';
+  const useAzure = Boolean(azureEndpoint && azureKey);
+  if (!useAzure && !githubToken) {
+    return textResponse(
+      'AI explanation is not configured. Set GITHUB_TOKEN (or AZURE_OPENAI_ENDPOINT + AZURE_OPENAI_API_KEY) in your environment variables.',
+      503,
+    );
+  }
 
   const candidates = eventsNearby(safeBody.focusDate);
 
@@ -119,6 +119,10 @@ export async function POST(req: NextRequest) {
       });
 
   const model = useAzure ? azureDeployment : 'gpt-4o';
+  const providerSignal = AbortSignal.any([
+    req.signal,
+    AbortSignal.timeout(PROVIDER_TIMEOUT_MS),
+  ]);
 
   const createStream = () =>
     client.chat.completions.create(
@@ -132,7 +136,7 @@ export async function POST(req: NextRequest) {
           { role: 'user' as const, content: buildPrompt(safeBody, candidates) },
         ],
       },
-      { signal: req.signal },
+      { signal: providerSignal },
     );
   let stream: Awaited<ReturnType<typeof createStream>>;
   try {

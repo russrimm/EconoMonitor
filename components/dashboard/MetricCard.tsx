@@ -44,8 +44,8 @@ export function MetricCard({ seriesId, isPinned, onToggle }: Props) {
   if (latest && prev) {
     const l = parseFloat(latest.value);
     const p = parseFloat(prev.value);
-    if (!isNaN(l) && !isNaN(p) && p !== 0) {
-      pct = ((l - p) / Math.abs(p)) * 100;
+    if (!isNaN(l) && !isNaN(p) && p > 0 && l >= 0) {
+      pct = ((l - p) / p) * 100;
       up = pct >= 0;
     }
   }
@@ -147,7 +147,7 @@ export function MetricCard({ seriesId, isPinned, onToggle }: Props) {
         {pct !== null && (
           <span
             className="flex items-center gap-0.5 text-xs font-semibold"
-            style={{ color: accentColor }}
+            style={{ color: up ? 'var(--accent)' : 'var(--red)' }}
             title="Percent change from the prior observation"
           >
             {up ? (
@@ -177,7 +177,7 @@ export function MetricCard({ seriesId, isPinned, onToggle }: Props) {
       {/* Sparkline */}
       <div className="h-16 w-full">
         {valid.length > 1 && (
-          <SparklineChart observations={valid} color={accentColor} />
+          <SparklineChart observations={valid} color={accentColor} label={series.title} />
         )}
       </div>
 
@@ -187,7 +187,7 @@ export function MetricCard({ seriesId, isPinned, onToggle }: Props) {
         const fmt = (d: string) =>
           new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
         return (
-          <div className="flex items-center justify-between text-xs" style={{ color: 'var(--text-muted)' }}>
+          <div className="flex items-center justify-between text-xs" style={{ color: 'var(--text)' }}>
             <span>{fmt(chartStart.date)}</span>
             <span>{latest ? fmt(latest.date) : ''}</span>
           </div>

@@ -1,7 +1,14 @@
 'use client';
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { EventCategory } from '@/lib/events';
+import {
+  readBoundedResponseChunks,
+  readBoundedResponseText,
+  withDeadline,
+} from '@/lib/responseBody';
+
+const MAX_RESPONSE_BYTES = 256 * 1024;
 
 export interface ExplainCandidate {
   id: string;
@@ -36,6 +43,7 @@ export function useAiExplain(): UseAiExplainResult {
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   const reset = useCallback(() => {
     abortRef.current?.abort();
@@ -60,23 +68,21 @@ export function useAiExplain(): UseAiExplainResult {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(req),
-        signal: controller.signal,
+        signal: withDeadline(controller.signal, 75_000),
       });
 
       if (!res.ok) {
-        const msg = await res.text();
+        const msg = await readBoundedResponseText(res, 4 * 1024);
+        if (abortRef.current !== controller) return;
         setError(msg || `Request failed (${res.status})`);
         return;
       }
 
-      const reader = res.body!.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
       let metaConsumed = false;
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+      for await (const value of readBoundedResponseChunks(res, MAX_RESPONSE_BYTES)) {
         buffer += decoder.decode(value, { stream: true });
 
         if (!metaConsumed) {
@@ -90,7 +96,9 @@ export function useAiExplain(): UseAiExplainResult {
                 candidates?: ExplainCandidate[];
               };
               if (parsed.__meta === 'candidates' && parsed.candidates) {
-                setCandidates(parsed.candidates);
+                if (abortRef.current === controller) {
+                  setCandidates(parsed.candidates);
+                }
               }
             } catch {
               // No metadata header — treat the whole line as prose.
@@ -104,16 +112,27 @@ export function useAiExplain(): UseAiExplainResult {
         }
 
         if (buffer.length > 0) {
-          setText((prev) => prev + buffer);
+          if (abortRef.current === controller) {
+            setText((prev) => prev + buffer);
+          }
           buffer = '';
         }
       }
+      const finalChunk = decoder.decode();
+      if (finalChunk && abortRef.current === controller) {
+        setText((prev) => prev + finalChunk);
+      }
     } catch (err) {
       if ((err as { name?: string }).name !== 'AbortError') {
-        setError((err as Error).message ?? 'Unknown error');
+        if (abortRef.current === controller) {
+          setError((err as Error).message ?? 'Unknown error');
+        }
       }
     } finally {
-      setIsStreaming(false);
+      if (abortRef.current === controller) {
+        abortRef.current = null;
+        setIsStreaming(false);
+      }
     }
   }, []);
 

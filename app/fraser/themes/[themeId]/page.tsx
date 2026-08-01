@@ -13,6 +13,7 @@ import {
   extractStartDate,
   type FraserRecord,
 } from '@/lib/fraser';
+import { QueryError } from '@/components/QueryError';
 
 const PAGE_SIZE = 20;
 
@@ -114,7 +115,12 @@ export default function ThemePage() {
 
       {/* Theme header */}
       <div className="flex flex-col gap-3">
-        {themeQuery.isLoading ? (
+        {themeQuery.isError ? (
+          <QueryError
+            message="Theme details could not be loaded."
+            onRetry={() => void themeQuery.refetch()}
+          />
+        ) : themeQuery.isLoading ? (
           <div className="h-8 w-64 rounded animate-pulse" style={{ background: 'var(--surface)' }} />
         ) : (
           <>
@@ -178,6 +184,7 @@ export default function ThemePage() {
             <div className="relative min-w-48">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />
               <input
+                aria-label="Filter theme records"
                 value={keywordFilter}
                 onChange={(e) => setKeywordFilter(e.target.value)}
                 placeholder="Filter records…"
@@ -190,6 +197,7 @@ export default function ThemePage() {
               <button
                 key={t}
                 onClick={() => setTypeFilter(t)}
+                aria-pressed={typeFilter === t}
                 className="px-2.5 py-1 rounded-full text-xs font-medium capitalize transition-colors"
                 style={{
                   background: typeFilter === t ? 'var(--accent)' : 'var(--surface)',
@@ -204,16 +212,10 @@ export default function ThemePage() {
         )}
 
         {recordsQuery.error && (
-          <div
-            className="rounded-xl px-4 py-3 text-sm"
-            style={{
-              background: 'color-mix(in srgb, var(--red) 10%, transparent)',
-              color: 'var(--red)',
-              border: '1px solid color-mix(in srgb, var(--red) 30%, transparent)',
-            }}
-          >
-            Failed to load records.
-          </div>
+          <QueryError
+            message="Theme records could not be loaded."
+            onRetry={() => void recordsQuery.refetch()}
+          />
         )}
 
         <div
@@ -228,7 +230,9 @@ export default function ThemePage() {
                   style={{ background: 'var(--surface-2)' }}
                 />
               ))
-            : records.length > 0
+            : recordsQuery.isError
+              ? null
+              : records.length > 0
               ? records.map((rec, i) => <RecordRow key={i} record={rec} />)
               : (
                 <p className="px-4 py-6 text-sm text-center" style={{ color: 'var(--text-muted)' }}>

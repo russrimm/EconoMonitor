@@ -11,6 +11,7 @@ import {
   type FraserTheme,
   type FraserTimeline,
 } from '@/lib/fraser';
+import { QueryError } from '@/components/QueryError';
 
 function ThemeCard({ theme }: { theme: FraserTheme }) {
   const id = extractId(theme.recordInfo);
@@ -200,16 +201,13 @@ export default function FraserPage() {
 
       {/* Generic error */}
       {!apiKeyMissing && (themes.error || timelines.error) && (
-        <div
-          className="rounded-xl px-4 py-3 text-sm"
-          style={{
-            background: 'color-mix(in srgb, var(--red) 10%, transparent)',
-            color: 'var(--red)',
-            border: '1px solid color-mix(in srgb, var(--red) 30%, transparent)',
+        <QueryError
+          message="FRASER data could not be loaded."
+          onRetry={() => {
+            if (themes.isError) void themes.refetch();
+            if (timelines.isError) void timelines.refetch();
           }}
-        >
-          Failed to load FRASER data. Please try again.
-        </div>
+        />
       )}
 
       {/* Themes */}

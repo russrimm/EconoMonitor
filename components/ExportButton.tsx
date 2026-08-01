@@ -2,25 +2,34 @@
 
 import { useState } from 'react';
 import { Download } from 'lucide-react';
-import { exportToCSV, exportToJSON } from '@/lib/utils';
+import {
+  exportDatasetsToCSV,
+  exportDatasetsToJSON,
+  exportToCSV,
+  exportToJSON,
+  type ExportDataset,
+} from '@/lib/utils';
 import type { FredObservation } from '@/lib/fred';
 
 interface Props {
   seriesId: string;
   title: string;
   observations: FredObservation[];
+  datasets?: ExportDataset[];
 }
 
-export function ExportButton({ seriesId, title, observations }: Props) {
+export function ExportButton({ seriesId, title, observations, datasets }: Props) {
   const [open, setOpen] = useState(false);
 
   function handleCSV() {
-    exportToCSV(seriesId, title, observations);
+    if (datasets) exportDatasetsToCSV(seriesId, datasets);
+    else exportToCSV(seriesId, title, observations);
     setOpen(false);
   }
 
   function handleJSON() {
-    exportToJSON(seriesId, title, observations);
+    if (datasets) exportDatasetsToJSON(seriesId, title, datasets);
+    else exportToJSON(seriesId, title, observations);
     setOpen(false);
   }
 

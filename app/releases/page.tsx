@@ -3,12 +3,13 @@
 import { useState } from 'react';
 import { Calendar, Search } from 'lucide-react';
 import { useReleases } from '@/hooks/useFredQuery';
+import { QueryError } from '@/components/QueryError';
 
 export default function ReleasesPage() {
   const [offset, setOffset] = useState(0);
   const [nameFilter, setNameFilter] = useState('');
   const [pressOnly, setPressOnly] = useState(false);
-  const { data, isLoading, error } = useReleases(offset);
+  const { data, isLoading, error, refetch } = useReleases(offset);
 
   const allReleases = data?.releases ?? [];
   const total = data?.count ?? 0;
@@ -89,16 +90,10 @@ export default function ReleasesPage() {
 
       {/* Error */}
       {error && (
-        <div
-          className="rounded-xl px-4 py-3 text-sm"
-          style={{
-            background: 'color-mix(in srgb, var(--red) 10%, transparent)',
-            color: 'var(--red)',
-            border: '1px solid color-mix(in srgb, var(--red) 30%, transparent)',
-          }}
-        >
-          Failed to load releases. Please try again.
-        </div>
+        <QueryError
+          message="Data releases could not be loaded."
+          onRetry={() => void refetch()}
+        />
       )}
 
       {/* Table */}

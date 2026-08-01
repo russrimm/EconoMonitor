@@ -39,6 +39,10 @@ env:
 
 permissions: {}
 
+concurrency:
+  group: azure-app-service-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # ── Build ─────────────────────────────────────────────────────────────────
   build:
@@ -64,6 +68,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Install accessibility test browser
+        run: npx playwright install --with-deps chromium
 
       - name: Run unit tests
         run: npm test
@@ -160,26 +167,33 @@ jobs:
     permissions: {}
 
     steps:
-      - name: Wait for app to warm up
-        run: sleep 20
-
       - name: Check homepage returns HTTP 200
         run: |
-          STATUS=$(curl -o /dev/null -s -w "%{http_code}" \
-            --max-time 30 \
-            "https://${{ env.AZURE_WEBAPP_NAME }}.azurewebsites.net")
-          echo "Homepage status: $STATUS"
+          STATUS=000
+          for ATTEMPT in {1..10}; do
+            STATUS=$(curl -o /dev/null -s -w "%{http_code}" \
+              --connect-timeout 10 --max-time 30 \
+              "https://${{ env.AZURE_WEBAPP_NAME }}.azurewebsites.net") || true
+            echo "Homepage attempt $ATTEMPT status: $STATUS"
+            [ "$STATUS" = "200" ] && break
+            sleep 15
+          done
           [ "$STATUS" = "200" ] || exit 1
 
       - name: Check AI chat request validation
         run: |
-          STATUS=$(curl -o /dev/null -s -w "%{http_code}" \
-            --max-time 30 \
-            -X POST \
-            -H "Content-Type: application/json" \
-            -d '{"messages":[]}' \
-            "https://${{ env.AZURE_WEBAPP_NAME }}.azurewebsites.net/api/ai/chat")
-          echo "Chat API status: $STATUS"
+          STATUS=000
+          for ATTEMPT in {1..5}; do
+            STATUS=$(curl -o /dev/null -s -w "%{http_code}" \
+              --connect-timeout 10 --max-time 30 \
+              -X POST \
+              -H "Content-Type: application/json" \
+              -d '{"messages":[]}' \
+              "https://${{ env.AZURE_WEBAPP_NAME }}.azurewebsites.net/api/ai/chat") || true
+            echo "Chat API attempt $ATTEMPT status: $STATUS"
+            [ "$STATUS" = "400" ] && break
+            sleep 10
+          done
           [ "$STATUS" = "400" ] || exit 1
 
       - name: Deployment summary

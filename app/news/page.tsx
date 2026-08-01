@@ -8,6 +8,7 @@ import {
   NEWS_TOPICS,
   type NewsTopic,
 } from '@/lib/news';
+import { QueryError } from '@/components/QueryError';
 
 const TOPIC_LABELS: Record<NewsTopic, string> = {
   all: 'Top stories',
@@ -39,8 +40,8 @@ export default function NewsPage() {
   const [topic, setTopic] = useState<NewsTopic>('all');
   const { data, isLoading, isFetching, error, refetch } = useQuery({
     queryKey: ['financial-news', topic],
-    queryFn: () => getLatestNews(topic),
-    staleTime: 15 * 60 * 1000,
+    queryFn: ({ signal }) => getLatestNews(topic, signal),
+    staleTime: 60 * 1000,
   });
 
   return (
@@ -83,6 +84,7 @@ export default function NewsPage() {
               key={value}
               type="button"
               onClick={() => setTopic(value)}
+              aria-pressed={active}
               className="px-3 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap"
               style={{
                 background: active
@@ -91,7 +93,7 @@ export default function NewsPage() {
                 border: active
                   ? '1px solid color-mix(in srgb, var(--accent) 35%, transparent)'
                   : '1px solid var(--border)',
-                color: active ? 'var(--accent)' : 'var(--text-muted)',
+                color: active ? 'var(--accent-hover)' : 'var(--text-muted)',
               }}
             >
               {TOPIC_LABELS[value]}
@@ -101,19 +103,14 @@ export default function NewsPage() {
       </div>
 
       {error && (
-        <div
-          className="rounded-xl px-4 py-3 text-sm"
-          role="alert"
-          style={{
-            background: 'color-mix(in srgb, var(--red) 10%, transparent)',
-            border: '1px solid color-mix(in srgb, var(--red) 30%, transparent)',
-            color: 'var(--red)',
-          }}
-        >
-          {error instanceof Error
-            ? error.message
-            : 'Failed to load financial news.'}
-        </div>
+        <QueryError
+          message={
+            error instanceof Error
+              ? error.message
+              : 'Financial news could not be loaded.'
+          }
+          onRetry={() => void refetch()}
+        />
       )}
 
       {data?.partial && (
@@ -126,16 +123,20 @@ export default function NewsPage() {
             color: 'var(--text-muted)',
           }}
         >
-          One news provider is temporarily unavailable. Showing the latest
-          headlines from {data.providers.join(' and ')}.
+          One news provider is temporarily unavailable.
+          {data.providers.length > 0 &&
+            ` Showing the latest headlines from ${data.providers.join(' and ')}.`}
         </div>
       )}
 
       <section
         className="rounded-xl overflow-hidden"
-        aria-busy={isLoading}
+        aria-busy={isFetching}
         style={{ border: '1px solid var(--border)' }}
       >
+        <span className="sr-only" role="status" aria-live="polite">
+          {isFetching ? 'Refreshing financial news.' : 'Financial news updated.'}
+        </span>
         {isLoading
           ? Array.from({ length: 10 }).map((_, index) => (
               <div
