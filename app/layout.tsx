@@ -48,9 +48,22 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+        <a
+          href="#main-content"
+          className="sr-only fixed left-4 top-4 z-[100] rounded-md px-4 py-2 font-medium focus:not-sr-only"
+          style={{ background: "var(--accent)", color: "white" }}
+        >
+          Skip to content
+        </a>
         <Providers>
           <Navbar />
-          <main className="mx-auto max-w-7xl px-4 py-6">{children}</main>
+          <main
+            id="main-content"
+            tabIndex={-1}
+            className="mx-auto max-w-7xl px-4 py-6 focus:outline-none"
+          >
+            {children}
+          </main>
         </Providers>
       </body>
     </html>

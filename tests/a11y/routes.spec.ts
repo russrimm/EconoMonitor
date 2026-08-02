@@ -55,6 +55,21 @@ async function mockPublicApis(page: Page) {
       });
       return;
     }
+    if (url.pathname.endsWith('/releases')) {
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          count: 2,
+          offset: 0,
+          limit: 50,
+          releases: [
+            { id: 1, name: 'Gross Domestic Product', press_release: true },
+            { id: 2, name: 'Consumer Price Index', press_release: false },
+          ],
+        }),
+      });
+      return;
+    }
     await route.fulfill({
       contentType: 'application/json',
       body: JSON.stringify({ seriess: [], count: 0, offset: 0, limit: 20 }),
@@ -162,4 +177,36 @@ test('form controls are named explicitly, not by placeholder alone', async ({ pa
     unnamed,
     `Controls relying on placeholder or title for their accessible name:\n${unnamed.join('\n')}`,
   ).toEqual([]);
+});
+
+test('keyboard users can skip repeated navigation', async ({ page }) => {
+  await mockPublicApis(page);
+  await page.goto('/');
+
+  await page.keyboard.press('Tab');
+  const skipLink = page.getByRole('link', { name: 'Skip to content' });
+  await expect(skipLink).toBeFocused();
+  await skipLink.press('Enter');
+  await expect(page.locator('main#main-content')).toBeFocused();
+});
+
+test('mobile navigation and release filters describe their scope', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await mockPublicApis(page);
+  await page.goto('/releases');
+
+  const mobileNav = page.locator('nav[aria-label="Primary"]:visible');
+  await expect(mobileNav).toBeVisible();
+  await expect(mobileNav.getByRole('link', { name: 'Releases' })).toHaveAttribute(
+    'aria-current',
+    'page',
+  );
+
+  const filter = page.getByRole('textbox', {
+    name: 'Filter releases on this page by name',
+  });
+  await filter.fill('Gross');
+  await expect(page.getByRole('status')).toContainText(
+    '1 of 2 releases on this page shown',
+  );
 });
