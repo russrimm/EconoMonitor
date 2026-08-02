@@ -59,6 +59,27 @@ import {
 } from '../lib/upstreamSchemas.ts';
 import { datasetsToCSV, localCalendarDate } from '../lib/utils.ts';
 import { scanText } from '../scripts/check-secrets.mjs';
+import { buildSecurityHeaders } from '../lib/securityHeaders.ts';
+
+test('security headers prevent embedding and restrict browser capabilities', () => {
+  const production = new Map(
+    buildSecurityHeaders(true).map(({ key, value }) => [key, value]),
+  );
+  const csp = production.get('Content-Security-Policy') ?? '';
+
+  assert.match(csp, /default-src 'self'/);
+  assert.match(csp, /frame-ancestors 'none'/);
+  assert.match(csp, /object-src 'none'/);
+  assert.match(csp, /upgrade-insecure-requests/);
+  assert.doesNotMatch(csp, /unsafe-eval/);
+  assert.equal(production.get('X-Content-Type-Options'), 'nosniff');
+  assert.match(production.get('Strict-Transport-Security') ?? '', /max-age=63072000/);
+
+  const developmentCsp =
+    buildSecurityHeaders(false).find(({ key }) => key === 'Content-Security-Policy')?.value ?? '';
+  assert.match(developmentCsp, /unsafe-eval/);
+  assert.doesNotMatch(developmentCsp, /upgrade-insecure-requests/);
+});
 
 test('observation ranges reject unknown URL values and use UTC-safe calendar dates', () => {
   assert.equal(parseObservationRange('invalid'), '5y');

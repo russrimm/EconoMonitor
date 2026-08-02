@@ -65,6 +65,13 @@ npm run lint
 npm run build
 ```
 
+### Health checks
+
+- `GET /api/health/live` reports process liveness.
+- `GET /api/health/ready` returns `503` when the required FRED configuration is
+  missing. Optional FRASER and AI configuration is reported only as boolean
+  capability status; credential values are never returned.
+
 ---
 
 ## Deploy to Azure App Service

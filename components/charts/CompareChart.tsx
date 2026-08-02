@@ -29,7 +29,7 @@ export interface CompareDataset {
   observations: FredObservation[];
 }
 
-interface Props {
+export interface CompareChartProps {
   datasets: CompareDataset[];
   /**
    * When set, every series is drawn against a single Y-axis carrying this
@@ -44,7 +44,11 @@ interface Props {
   baseline?: number | null;
 }
 
-export function CompareChart({ datasets, sharedAxisLabel = null, baseline = null }: Props) {
+export function CompareChart({
+  datasets,
+  sharedAxisLabel = null,
+  baseline = null,
+}: CompareChartProps) {
   const { dark } = useTheme();
 
   const gridColor  = dark ? 'rgba(148,163,184,0.12)' : 'rgba(15,23,42,0.08)';

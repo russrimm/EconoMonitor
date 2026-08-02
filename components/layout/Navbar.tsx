@@ -132,7 +132,7 @@ export function Navbar() {
       </div>
 
       {/* Mobile nav */}
-      <div
+      <nav
         className="xl:hidden flex border-t overflow-x-auto"
         aria-label="Primary"
         style={{ borderColor: 'var(--border)' }}
@@ -153,7 +153,7 @@ export function Navbar() {
             </Link>
           );
         })}
-      </div>
+      </nav>
     </header>
   );
 }

@@ -32,8 +32,8 @@ export default function ReleasesPage() {
           Data Releases
         </h1>
         <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
-          All FRED economic data releases
-          {total > 0 && ` · ${total.toLocaleString()} total`}
+          Browse FRED economic data releases, 50 per page
+          {total > 0 && ` · ${total.toLocaleString()} total across all pages`}
         </p>
       </div>
 
@@ -42,7 +42,7 @@ export default function ReleasesPage() {
         <div className="relative flex-1 min-w-48 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />
           <input
-            aria-label="Filter releases by name"
+            aria-label="Filter releases on this page by name"
             value={nameFilter}
             onChange={(e) => setNameFilter(e.target.value)}
             placeholder="Filter by name…"
@@ -82,8 +82,13 @@ export default function ReleasesPage() {
           </button>
         )}
         {(nameFilter.trim() || pressOnly) && allReleases.length > 0 && (
-          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-            {releases.length} of {allReleases.length} shown
+          <span
+            className="text-xs"
+            role="status"
+            aria-live="polite"
+            style={{ color: 'var(--text-muted)' }}
+          >
+            {releases.length} of {allReleases.length} releases on this page shown
           </span>
         )}
       </div>
@@ -203,6 +208,19 @@ export default function ReleasesPage() {
 
                   </tr>
                 ))}
+            {!isLoading && releases.length === 0 && (
+              <tr style={{ background: 'var(--surface)' }}>
+                <td
+                  className="px-4 py-8 text-center"
+                  colSpan={2}
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  {allReleases.length > 0
+                    ? 'No releases on this page match the selected filters.'
+                    : 'No releases are available on this page.'}
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
