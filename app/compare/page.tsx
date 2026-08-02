@@ -1,11 +1,15 @@
 'use client';
 
 import { Suspense, useEffect, useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { ChevronDown, Loader2, Pin, Search, X } from 'lucide-react';
 import { useMultiObservations, useMultiSeries, useSeriesSearch } from '@/hooks/useFredQuery';
 import { usePinnedSeries } from '@/hooks/usePinnedSeries';
-import { CompareChart, type CompareDataset } from '@/components/charts/CompareChart';
+import type {
+  CompareChartProps,
+  CompareDataset,
+} from '@/components/charts/CompareChart';
 import { ChartDataTable } from '@/components/charts/ChartDataTable';
 import { ExportButton } from '@/components/ExportButton';
 import { TransformControls } from '@/components/controls/TransformControls';
@@ -31,6 +35,22 @@ import {
 import type { AnalyzeDataset } from '@/lib/ai';
 
 const MAX_SERIES = 6;
+
+const CompareChart = dynamic<CompareChartProps>(
+  () => import('@/components/charts/CompareChart').then((module) => module.CompareChart),
+  {
+    ssr: false,
+    loading: () => (
+      <div
+        className="flex h-64 items-center justify-center rounded-xl text-sm"
+        role="status"
+        style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}
+      >
+        Loading interactive chart…
+      </div>
+    ),
+  },
+);
 
 const VALID_UNITS = new Set(Object.keys(TRANSFORM_MAP));
 const VALID_NORMS = new Set(Object.keys(NORMALIZE_MAP));

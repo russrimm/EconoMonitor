@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import {
   ArrowLeft,
@@ -17,7 +18,7 @@ import {
 import { useSeries, useObservations } from '@/hooks/useFredQuery';
 import { usePinnedSeries } from '@/hooks/usePinnedSeries';
 import { formatDate } from '@/lib/utils';
-import { SeriesChart } from '@/components/charts/SeriesChart';
+import type { SeriesChartProps } from '@/components/charts/SeriesChart';
 import { ExportButton } from '@/components/ExportButton';
 import { TransformControls } from '@/components/controls/TransformControls';
 import { InsightsPanel } from '@/components/ai/InsightsPanel';
@@ -45,6 +46,22 @@ const RANGES: { label: string; value: ObservationRange }[] = [
   { label: '10Y', value: '10y' },
   { label: 'Max', value: 'max' },
 ];
+
+const SeriesChart = dynamic<SeriesChartProps>(
+  () => import('@/components/charts/SeriesChart').then((module) => module.SeriesChart),
+  {
+    ssr: false,
+    loading: () => (
+      <div
+        className="flex h-64 items-center justify-center rounded-xl text-sm"
+        role="status"
+        style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}
+      >
+        Loading interactive chart…
+      </div>
+    ),
+  },
+);
 
 export default function SeriesDetailPage() {
   const { seriesId } = useParams<{ seriesId: string }>();

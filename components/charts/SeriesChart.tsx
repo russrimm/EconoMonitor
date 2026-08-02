@@ -26,7 +26,7 @@ ChartJS.register(
   Title, Tooltip, Legend, Filler,
 );
 
-interface Props {
+export interface SeriesChartProps {
   observations: FredObservation[];
   title: string;
   units: string;
@@ -124,7 +124,13 @@ const eventOverlayPlugin: Plugin<'line'> = {
 
 ChartJS.register(eventOverlayPlugin);
 
-export function SeriesChart({ observations, title, units, color = '#10b981', events }: Props) {
+export function SeriesChart({
+  observations,
+  title,
+  units,
+  color = '#10b981',
+  events,
+}: SeriesChartProps) {
   const { dark } = useTheme();
 
   const gridColor  = dark ? 'rgba(148,163,184,0.12)' : 'rgba(15,23,42,0.08)';
