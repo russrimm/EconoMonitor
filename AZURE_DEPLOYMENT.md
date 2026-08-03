@@ -26,8 +26,8 @@ post-deployment validation.
 | Tool | Version | Notes |
 |------|---------|-------|
 | [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli) | ≥ 2.60 | `az --version` to confirm |
-| Node.js | 20 LTS | Must match the App Service runtime |
-| npm | ≥ 10 | Bundled with Node 20 |
+| Node.js | 22 or newer | `package.json` requires `>=22`; the App Service runtime is `NODE:24-lts` |
+| npm | ≥ 10 | Bundled with Node 22+ |
 | An Azure subscription | — | Free trial works fine |
 
 **Recommended VS Code extensions for minimal-effort deployment:**
@@ -81,28 +81,45 @@ az group create \
 az appservice plan create \
   --name asp-economonitor \
   --resource-group rg-economonitor \
-  --sku B2 \
+  --sku F1 \
   --is-linux
 ```
 
 | SKU | vCores | RAM | Monthly cost (approx.) | Notes |
 |-----|--------|-----|------------------------|-------|
-| F1  | shared | 1 GB | Free | No custom domain, no Always On, 60 min/day CPU limit |
-| B1  | 1 | 1.75 GB | ~$13 | Lowest tier that supports Always On |
-| **B2** | **1** | **3.5 GB** | **~$27** | **Recommended minimum for Next.js** |
+| **F1** | **shared** | **1 GB** | **Free** | **Testing and validation only.** No custom domain, no Always On, 60 min/day CPU quota |
+| B1  | 1 | 1.75 GB | ~$13 | Lowest tier that supports Always On — start here for real traffic |
+| B2  | 1 | 3.5 GB | ~$27 | Comfortable headroom for Next.js |
 | B3  | 2 | 7 GB | ~$54 | Use if you expect concurrent AI calls |
 | P1v3 | 1 | 8 GB | ~$81 | Production with auto-scale support |
 
-> **The live deployment currently runs on F1 (Free), not B2.** That is why
-> Always On cannot be enabled — `az webapp config set --always-on true` returns
-> `Conflict` on Free tier — and why the first request after idle is slow. F1
-> also enforces a 60 CPU-minute daily quota, after which the app stops serving
-> until the quota resets. Upgrade with:
+> **This deployment runs on F1 (Free) deliberately — treat it as a test and
+> validation environment, not production.** F1 is the right choice while you are
+> proving out the build, the deployment pipeline, and the Azure OpenAI wiring at
+> zero cost. Be aware of what you are accepting:
+>
+> - **No Always On.** `az webapp config set --always-on true` returns `Conflict`
+>   on Free tier. The Node.js process is unloaded after ~20 minutes idle, so the
+>   next request pays a 30–60 second cold start.
+> - **60 CPU-minutes per day.** Once the quota is exhausted the app stops
+>   serving until it resets, and returns `403` in the meantime.
+> - **No custom domain and no TLS binding**, so you are limited to
+>   `*.azurewebsites.net`.
+> - **Shared compute**, so response times vary with neighbouring workloads.
+>
+> Before putting this in front of real users, move to B1 or higher and then
+> enable Always On:
 >
 > ```bash
 > az appservice plan update --name asp-economonitor \
 >   --resource-group rg-economonitor --sku B1
+>
+> az webapp config set --name economonitor \
+>   --resource-group rg-economonitor --always-on true
 > ```
+>
+> Nothing else in this guide changes with the SKU — the deployment pipeline,
+> managed identity, and app settings are identical on F1 and B1.
 
 ### 2c. Web App
 
@@ -268,7 +285,9 @@ az webapp deploy \
 3. The app becomes available at `https://economonitor.azurewebsites.net`
 
 > **First cold start** after a fresh deployment can take 30–60 seconds.
-> Enable **Always On** (`az webapp config set --always-on true`) on B1+ plans to keep warm.
+> On the current F1 (Free) plan this also happens after ~20 minutes of
+> inactivity, because Always On is unavailable below B1. That is expected for a
+> test and validation environment — see Section 2b before going to production.
 
 ---
 
@@ -662,9 +681,29 @@ cd .next/standalone && zip -r ../../deploy.zip . && cd ../..
 
 ### App is slow on first request (cold start)
 
-Enable **Always On** to keep the Node.js process warm (requires B1 or higher):
+This is expected on the current **F1 (Free)** plan: Always On is not available
+below B1, so the process is unloaded after roughly 20 minutes of inactivity and
+the next request pays the start-up cost. F1 is intended for testing and
+validation, so this trade-off is deliberate.
+
+If the app returns `403` rather than being merely slow, you have likely
+exhausted the F1 quota of 60 CPU-minutes per day; it resets on a daily cycle.
+Check with:
 
 ```bash
+az appservice plan show --name asp-economonitor \
+  --resource-group rg-economonitor --query "{sku:sku.name,status:status}" -o json
+```
+
+To keep the process warm, move to B1 or higher first — `--always-on true`
+returns `Conflict` on Free tier:
+
+```bash
+az appservice plan update \
+  --name asp-economonitor \
+  --resource-group rg-economonitor \
+  --sku B1
+
 az webapp config set \
   --name economonitor \
   --resource-group rg-economonitor \

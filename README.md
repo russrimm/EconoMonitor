@@ -86,7 +86,16 @@ npm run build
 
 ## Deploy to Azure App Service
 
-EconoMonitor runs on **Azure App Service** (Linux, Node 22 LTS, B2 plan).
+EconoMonitor runs on **Azure App Service** (Linux, Node 24 LTS).
+
+> **The reference deployment uses the F1 (Free) plan, which is suitable for
+> testing and validating the app — not for production.** F1 lets you exercise
+> the full build, deploy, and Azure OpenAI path at no cost, but it has no
+> Always On (so expect a 30–60 second cold start after ~20 minutes idle), a
+> 60 CPU-minute daily quota, no custom domain, and shared compute. Move to
+> **B1 or higher** before serving real users, then enable Always On. See
+> [AZURE_DEPLOYMENT.md § 2b](./AZURE_DEPLOYMENT.md#2b-app-service-plan) for the
+> upgrade commands and the full SKU comparison.
 
 ### One-time infrastructure setup
 
@@ -98,19 +107,20 @@ Run these commands once to create the Azure resources. You need the
 # 1. Create a resource group
 az group create --name rg-economonitor --location eastus
 
-# 2. Create a Linux App Service plan (B2 = 1 vCPU / 3.5 GB RAM)
+# 2. Create a Linux App Service plan.
+#    F1 (Free) is used here for testing and validation — see the note below.
 az appservice plan create `
   --name asp-economonitor `
   --resource-group rg-economonitor `
-  --sku B2 `
+  --sku F1 `
   --is-linux
 
-# 3. Create the web app on Node 22 LTS
+# 3. Create the web app on Node 24 LTS
 az webapp create `
   --name economonitor `
   --resource-group rg-economonitor `
   --plan asp-economonitor `
-  --runtime "NODE:22-lts"
+  --runtime "NODE:24-lts"
 
 # 4. Set the startup command
 # The app uses Next.js standalone output — server.js is the entry point
