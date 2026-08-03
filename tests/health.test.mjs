@@ -23,3 +23,26 @@ test('readiness reports capability state without serializing configuration value
   const serialized = JSON.stringify(ready.body);
   assert.doesNotMatch(serialized, /sensitive-value|openai\.azure\.com/);
 });
+
+test('readiness treats AI as configured when only an endpoint is set', () => {
+  // Azure authenticates with managed identity, so there is no API key in
+  // production. Requiring one would report a healthy deployment as degraded.
+  const ready = getReadiness({
+    FRED_API_KEY: 'fred-sensitive-value',
+    FRASER_API_KEY: 'fraser-sensitive-value',
+    AZURE_OPENAI_ENDPOINT: 'https://example.cognitiveservices.azure.com',
+  });
+  assert.equal(ready.body.status, 'ready');
+  assert.equal(ready.body.checks.ai.configured, true);
+});
+
+test('readiness no longer treats a GitHub Models token as AI configuration', () => {
+  // GitHub Models was retired on 2026-07-30; a lingering token is not a provider.
+  const degraded = getReadiness({
+    FRED_API_KEY: 'fred-sensitive-value',
+    FRASER_API_KEY: 'fraser-sensitive-value',
+    GITHUB_TOKEN: 'github_pat_retired',
+  });
+  assert.equal(degraded.body.status, 'degraded');
+  assert.equal(degraded.body.checks.ai.configured, false);
+});

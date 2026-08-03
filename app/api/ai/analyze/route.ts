@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
-import OpenAI from 'openai';
 import { buildSystemPrompt, buildUserPrompt } from '@/lib/ai';
+import { AI_NOT_CONFIGURED_MESSAGE, resolveAiClient } from '@/lib/aiClient';
 import { validateAnalyzeDatasets } from '@/lib/aiValidation';
 import { readLimitedJson, RequestBodyError } from '@/lib/http';
 
@@ -32,31 +32,12 @@ export async function POST(req: NextRequest) {
   if (!validation.ok) return textResponse(validation.error, 400);
   const datasets = validation.value;
 
-  const githubToken = process.env.GITHUB_TOKEN;
-  const azureEndpoint = process.env.AZURE_OPENAI_ENDPOINT;
-  const azureKey = process.env.AZURE_OPENAI_API_KEY;
-  const azureDeployment = process.env.AZURE_OPENAI_DEPLOYMENT ?? 'gpt-4o';
-  const useAzure = Boolean(azureEndpoint && azureKey);
-  if (!useAzure && !githubToken) {
-    return textResponse(
-      'AI analysis is not configured. Set GITHUB_TOKEN (or AZURE_OPENAI_ENDPOINT + AZURE_OPENAI_API_KEY) in your environment variables.',
-      503,
-    );
+  const resolved = resolveAiClient();
+  if (!resolved) {
+    return textResponse(AI_NOT_CONFIGURED_MESSAGE, 503);
   }
+  const { client, model } = resolved;
 
-  const client = useAzure
-    ? new OpenAI({
-        baseURL: `${azureEndpoint}/openai/deployments/${azureDeployment}`,
-        apiKey: azureKey!,
-        defaultQuery: { 'api-version': '2024-02-01' },
-        defaultHeaders: { 'api-key': azureKey! },
-      })
-    : new OpenAI({
-        baseURL: 'https://models.inference.ai.azure.com',
-        apiKey: githubToken!,
-      });
-
-  const model = useAzure ? azureDeployment : 'gpt-4o';
   const providerSignal = AbortSignal.any([
     req.signal,
     AbortSignal.timeout(PROVIDER_TIMEOUT_MS),
