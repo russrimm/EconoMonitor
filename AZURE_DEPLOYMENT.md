@@ -47,7 +47,7 @@ completed by describing what you want to Copilot in Agent mode — no manual CLI
 |----------|----------------|
 | `FRED_API_KEY` | [api.stlouisfed.org/api_key.html](https://api.stlouisfed.org/api_key.html) |
 | `FRASER_API_KEY` | [fraser.stlouisfed.org](https://fraser.stlouisfed.org) developer portal |
-| `GITHUB_TOKEN_AI` | GitHub → Settings → Personal Access Tokens (classic, `read:packages` scope; stored as `GITHUB_TOKEN_AI` — see Section 6b) |
+| Azure OpenAI access | A Microsoft Foundry / Azure OpenAI resource with a chat deployment (e.g. `gpt-4o`). No key required — see Section 3a. |
 
 Log in to Azure before running any commands below:
 
@@ -87,11 +87,22 @@ az appservice plan create \
 
 | SKU | vCores | RAM | Monthly cost (approx.) | Notes |
 |-----|--------|-----|------------------------|-------|
-| F1  | shared | 1 GB | Free | No custom domain, 60 min/day CPU limit |
-| B1  | 1 | 1.75 GB | ~$13 | Good for low-traffic testing |
+| F1  | shared | 1 GB | Free | No custom domain, no Always On, 60 min/day CPU limit |
+| B1  | 1 | 1.75 GB | ~$13 | Lowest tier that supports Always On |
 | **B2** | **1** | **3.5 GB** | **~$27** | **Recommended minimum for Next.js** |
 | B3  | 2 | 7 GB | ~$54 | Use if you expect concurrent AI calls |
 | P1v3 | 1 | 8 GB | ~$81 | Production with auto-scale support |
+
+> **The live deployment currently runs on F1 (Free), not B2.** That is why
+> Always On cannot be enabled — `az webapp config set --always-on true` returns
+> `Conflict` on Free tier — and why the first request after idle is slow. F1
+> also enforces a 60 CPU-minute daily quota, after which the app stops serving
+> until the quota resets. Upgrade with:
+>
+> ```bash
+> az appservice plan update --name asp-economonitor \
+>   --resource-group rg-economonitor --sku B1
+> ```
 
 ### 2c. Web App
 
@@ -134,8 +145,45 @@ az webapp config appsettings set \
     NODE_ENV=production \
     FRED_API_KEY="<your-fred-api-key>" \
     FRASER_API_KEY="<your-fraser-api-key>" \
-    GITHUB_TOKEN="<your-github-pat>"
+    AZURE_OPENAI_ENDPOINT="https://<your-resource>.cognitiveservices.azure.com" \
+    AZURE_OPENAI_DEPLOYMENT="gpt-4o"
 ```
+
+> **There is deliberately no AI API key here.** GitHub Models was retired on
+> 2026-07-30, and the replacement — Azure OpenAI — is accessed with the app's
+> managed identity. See Section 3a.
+
+> **Do not add `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, or `AZURE_SUBSCRIPTION_ID`
+> as App Settings.** Those belong in GitHub Secrets for the deploy workflow.
+> The application never reads them, and an `AZURE_CLIENT_ID` App Setting breaks
+> managed identity, because the Azure SDK then looks for a *user-assigned*
+> identity with that client ID and fails to get a token.
+
+### 3a. Grant the App Access to the Model (Managed Identity)
+
+Give the web app an identity and authorize it against your Azure OpenAI
+resource. No key is created, stored, or rotated.
+
+```bash
+az webapp identity assign \
+  --name economonitor \
+  --resource-group rg-economonitor
+
+PRINCIPAL_ID=$(az webapp identity show \
+  --name economonitor --resource-group rg-economonitor --query principalId -o tsv)
+
+SCOPE=$(az cognitiveservices account show \
+  --name <your-openai-resource> --resource-group <its-rg> --query id -o tsv)
+
+az role assignment create \
+  --assignee-object-id "$PRINCIPAL_ID" \
+  --assignee-principal-type ServicePrincipal \
+  --role "Cognitive Services OpenAI User" \
+  --scope "$SCOPE"
+```
+
+The role is scoped to the single resource, not the subscription, so the app can
+call that one model deployment and nothing else.
 
 To verify the settings were saved (values redacted):
 
@@ -312,14 +360,19 @@ your GitHub repo under **Settings → Secrets and variables → Actions**:
 | `AZURE_SUBSCRIPTION_ID` | Azure subscription ID | Output from Copilot in step 6a |
 | `FRED_API_KEY` | FRED API key | [api.stlouisfed.org](https://api.stlouisfed.org/api_key.html) |
 | `FRASER_API_KEY` | FRASER API key | [fraser.stlouisfed.org](https://fraser.stlouisfed.org) |
-| `GITHUB_TOKEN_AI` | GitHub PAT (for Models API) | GitHub → Settings → Personal access tokens |
 
-> **Why `GITHUB_TOKEN_AI` and not `GITHUB_TOKEN`?** GitHub Actions automatically creates
-> a built-in ephemeral secret named `GITHUB_TOKEN` for every workflow run. You cannot
-> override it with a repo secret — GitHub silently ignores any repo secret with that
-> name. Store your GitHub PAT under `GITHUB_TOKEN_AI` instead; the workflow's
-> `Sync App Settings` step maps it to the `GITHUB_TOKEN` app setting that the
-> application reads at runtime.
+Then add these as repository **Variables** (same page, *Variables* tab). They
+are configuration, not secrets — the app authenticates with managed identity:
+
+| Variable Name | Value |
+|---------------|-------|
+| `AZURE_OPENAI_ENDPOINT` | `https://<your-resource>.cognitiveservices.azure.com` |
+| `AZURE_OPENAI_DEPLOYMENT` | Model deployment name, e.g. `gpt-4o` |
+
+> **The `Sync App Settings` step skips empty values.** If a secret or variable
+> is missing it logs a warning and leaves the existing App Setting alone. An
+> earlier version wrote empty strings, which silently disabled the AI features
+> on every deploy.
 
 ### 6c. Create the GitHub `production` Environment
 
@@ -588,9 +641,24 @@ cd .next/standalone && zip -r ../../deploy.zip . && cd ../..
 
 ### AI chat returns errors
 
-- Confirm `GITHUB_TOKEN` is set and has not expired
-- The GitHub Models API has per-token rate limits; switching to the Azure OpenAI
-  fallback requires setting `AZURE_OPENAI_ENDPOINT` and `AZURE_OPENAI_DEPLOYMENT`
+- **503** means no provider is configured — check `AZURE_OPENAI_ENDPOINT` is set
+  as an App Setting.
+- **502** means the provider rejected the call. Most often the managed identity
+  is missing the `Cognitive Services OpenAI User` role on the resource (Section
+  3a), or an `AZURE_CLIENT_ID` App Setting is shadowing the system-assigned
+  identity. Verify with:
+
+  ```bash
+  az role assignment list --assignee "$(az webapp identity show \
+    --name economonitor --resource-group rg-economonitor --query principalId -o tsv)" \
+    --all --output table
+  ```
+
+- If the resource has `disableLocalAuth: true`, API keys will always fail;
+  managed identity is the only option.
+- GitHub Models (`models.inference.ai.azure.com`) was retired on 2026-07-30 and
+  returns `410`. Any lingering `GITHUB_TOKEN` setting is dead configuration and
+  should be deleted.
 
 ### App is slow on first request (cold start)
 

@@ -1090,31 +1090,34 @@ EconoMonitor includes an AI analysis feature that sends FRED series data to a la
 | `/compare` | When at least one series is added to the chart |
 | `/insights` | Dedicated page — series picker + insights panel |
 
-**Cost:** Free while using the GitHub Models API (rate-limited per PAT). Optional Azure OpenAI upgrade described in Section 29.4.
+**Cost:** Pay-per-token on Azure OpenAI. There is no free tier for the AI features since GitHub Models was retired.
 
 ---
 
-### 29.2 Getting a GitHub Token
+### 29.2 Configuring the AI Provider
 
-GitHub Models gives free access to gpt-4o and other frontier models with a personal access token.
+> **GitHub Models was fully retired on 2026-07-30.** The playground, model
+> catalog, and inference API (`models.inference.ai.azure.com`) are gone; the
+> endpoint now returns `410`. A GitHub PAT no longer grants model access at all.
+> Azure OpenAI is the only supported provider.
 
 **Step-by-step:**
 
-1. Go to [https://github.com](https://github.com) and sign in (or create an account).
-2. Click your profile photo (top-right) → **Settings**.
-3. Scroll to the bottom of the left sidebar → **Developer settings**.
-4. Click **Personal access tokens** → **Tokens (classic)**.
-5. Click **Generate new token** → **Generate new token (classic)**.
-6. Give it a descriptive name, e.g. `economonitor-models`.
-7. Set an expiration (90 days is a good starting point).
-8. Under **Select scopes**, tick **`read:packages`** — GitHub Models does not require a dedicated "Models" scope for classic tokens; the token just needs to be valid.
-    > Note: Some interfaces show a `models:read` scope for fine-grained tokens. If available, prefer a fine-grained token scoped only to Models access.
-9. Click **Generate token** and copy it immediately — it will not be shown again.
-10. Paste it into `.env.local`:
+1. Create a Microsoft Foundry / Azure OpenAI resource, or reuse an existing one.
+2. Deploy a chat model (this project defaults to a deployment named `gpt-4o`).
+3. Add the endpoint and deployment name to `.env.local`:
     ```
-    GITHUB_TOKEN=<your-github-models-token>
+    AZURE_OPENAI_ENDPOINT=https://<your-resource>.cognitiveservices.azure.com
+    AZURE_OPENAI_DEPLOYMENT=gpt-4o
     ```
-11. Restart the dev server (`Ctrl+C` then `npm run dev`).
+4. Authenticate. There is deliberately no key in the steps above:
+    - **Locally:** run `az login`. `DefaultAzureCredential` picks up your Azure
+      CLI session.
+    - **In Azure:** the App Service managed identity is used automatically. See
+      [AZURE_DEPLOYMENT.md § 3a](./AZURE_DEPLOYMENT.md#3a-grant-the-app-access-to-the-model-managed-identity).
+    - **Key fallback:** set `AZURE_OPENAI_API_KEY` only if the resource still
+      permits local auth. Resources with `disableLocalAuth: true` reject keys.
+5. Restart the dev server (`Ctrl+C` then `npm run dev`).
 
 **To verify it works:** Open `/series/GDP`, scroll to the AI Insights panel, click **Analyze**. Text should begin streaming within 2–4 seconds.
 
@@ -1130,7 +1133,9 @@ Browser
                     ├── buildSystemPrompt  (lib/ai.ts)
                     ├── buildUserPrompt    (lib/ai.ts)
                     │     └── downsampleSeries (lib/ai.ts)
-                    └── OpenAI SDK → GitHub Models API (models.inference.ai.azure.com)
+                    └── resolveAiClient    (lib/aiClient.ts)
+                          └── AzureOpenAI SDK → Azure OpenAI deployment
+                              (Entra token via DefaultAzureCredential)
                                         ↓ streamed plain text
                     ReadableStream → Response
               ↑ getReader() + TextDecoder → incremental state updates
@@ -1176,41 +1181,48 @@ If you need higher rate limits, SLA guarantees, or want to keep data within your
 2. Click **Deploy model** → select `gpt-4o` (or `gpt-4o-mini`).
 3. Give the deployment a name (e.g. `gpt-4o`) and click **Deploy**.
 
-**Step 3 — Get your endpoint and key:**
+**Step 3 — Get your endpoint:**
 1. In the Azure OpenAI resource, go to **Keys and Endpoint**.
-2. Copy **Key 1** and the **Endpoint** URL (format: `https://<your-resource>.openai.azure.com`).
+2. Copy the **Endpoint** URL (format: `https://<your-resource>.cognitiveservices.azure.com`).
+   You do not need Key 1 — prefer Entra authentication, and note that resources
+   with `disableLocalAuth: true` do not expose usable keys at all.
 
-**Step 4 — Set the three environment variables in `.env.local`:**
+**Step 4 — Set the environment variables in `.env.local`:**
 ```bash
-AZURE_OPENAI_ENDPOINT=https://<your-resource>.openai.azure.com
-AZURE_OPENAI_API_KEY=<your-key-1>
+AZURE_OPENAI_ENDPOINT=https://<your-resource>.cognitiveservices.azure.com
 AZURE_OPENAI_DEPLOYMENT=gpt-4o
+# Optional, local development only, and only if the resource allows local auth:
+# AZURE_OPENAI_API_KEY=<your-key-1>
 ```
-Leave `GITHUB_TOKEN` in place — it will be ignored automatically when the Azure vars are present.
 
 **Step 5 — Restart the dev server.**
-The route checks `AZURE_OPENAI_ENDPOINT` and `AZURE_OPENAI_API_KEY` first. If both are set, Azure OpenAI is used; otherwise it falls back to GitHub Models.
+`lib/aiClient.ts` builds a single cached `AzureOpenAI` client. When
+`AZURE_OPENAI_API_KEY` is absent it authenticates with `DefaultAzureCredential`,
+which resolves to your `az login` session locally and to the App Service managed
+identity in Azure:
 
-No code changes are needed — the route already handles both paths:
 ```typescript
-// app/api/ai/analyze/route.ts (already implemented)
-const useAzure = Boolean(azureEndpoint && azureKey);
-const client = useAzure
-  ? new OpenAI({ baseURL: `${azureEndpoint}/openai/deployments/${azureDeployment}`, ... })
-  : new OpenAI({ baseURL: 'https://models.inference.ai.azure.com', apiKey: githubToken });
+// lib/aiClient.ts (already implemented)
+const client = config.apiKey
+  ? new AzureOpenAI({ endpoint, deployment, apiVersion, apiKey: config.apiKey })
+  : new AzureOpenAI({
+      endpoint, deployment, apiVersion,
+      azureADTokenProvider: getBearerTokenProvider(
+        getCredential(), 'https://cognitiveservices.azure.com/.default'),
+    });
 ```
 
 ---
 
 ### 29.5 Optional: Switch to Microsoft Foundry
 
-Microsoft AI Foundry offers a managed model deployment layer on top of Azure AI, with additional monitoring, prompt evaluation, and safety filter capabilities.
+Microsoft Foundry offers a managed model deployment layer on top of Azure AI, with additional monitoring, prompt evaluation, and safety filter capabilities.
 
 **Additional steps on top of Section 29.4:**
 
-1. In the Azure portal, navigate to your **Azure AI Foundry** hub or create one via the [Azure AI Foundry portal](https://ai.azure.com).
-2. Inside Foundry, deploy `gpt-4o` from the **Model catalog**. This creates a Foundry-managed deployment with its own endpoint URL (different from the raw Azure OpenAI endpoint).
-3. Use the Foundry deployment's **endpoint** and **API key** (found in the deployment detail page) in place of the Azure OpenAI values in Step 4 above. The endpoint format will be similar but routed through the Foundry infrastructure.
+1. In the Azure portal, navigate to your **Microsoft Foundry** hub or create one via the [Microsoft Foundry portal](https://ai.azure.com).
+2. Inside Foundry, deploy `gpt-4o` from the **Model catalog**. This creates a Foundry-managed deployment with its own endpoint URL.
+3. Use the Foundry deployment's **endpoint** in place of the Azure OpenAI value in Step 4 above, and grant your identity the `Cognitive Services OpenAI User` role on that resource.
 
 The application code requires no changes — the route sends the same OpenAI-SDK-formatted `chat.completions.create` call regardless of whether the endpoint is raw Azure OpenAI or Foundry-managed.
 
@@ -1218,7 +1230,9 @@ The application code requires no changes — the route sends the same OpenAI-SDK
 
 ### 29.6 Security Notes
 
-- `GITHUB_TOKEN`, `AZURE_OPENAI_API_KEY`, and `AZURE_OPENAI_ENDPOINT` are read only inside `app/api/ai/analyze/route.ts`, which is a server-side Route Handler. They are never included in the client JavaScript bundle.
+- `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_DEPLOYMENT`, and the optional `AZURE_OPENAI_API_KEY` are read only inside `lib/aiClient.ts`, which is imported exclusively by server-side Route Handlers. They are never included in the client JavaScript bundle.
+- In Azure there is no AI credential to leak: authentication uses the App Service managed identity, and the `Cognitive Services OpenAI User` role is scoped to a single resource rather than the subscription.
+- Do not set `AZURE_CLIENT_ID` as an App Service setting. `DefaultAzureCredential` treats it as a *user-assigned* identity client ID, which breaks token acquisition for the system-assigned identity.
 - Series IDs submitted to the route are validated against the pattern `^[A-Z0-9_\-]{1,30}$` before being forwarded. This prevents injection via the `seriesId` field.
 - Observation values are numbers or the sentinel `'.'` — they are sent as-is to the prompt without further sanitization, which is appropriate for trusted FRED API data.
 - The route returns `Cache-Control: no-store` and `X-Content-Type-Options: nosniff` on every AI response.
@@ -1696,21 +1710,39 @@ run. It serves two purposes:
 
 ---
 
-### 30.4 The `GITHUB_TOKEN_AI` Naming Convention
+### 30.4 Syncing App Settings Without Clobbering Them
 
-The app reads `GITHUB_TOKEN` at runtime for the GitHub Models AI API. You cannot name
-a GitHub repo secret `GITHUB_TOKEN` — GitHub automatically creates an ephemeral token
-with that name for every workflow run and silently ignores any repo secret with the
-same name.
+The deploy workflow keeps App Settings in sync with GitHub Secrets and Variables.
+Two things it must get right:
 
-**Solution:** Store the GitHub PAT as `GITHUB_TOKEN_AI`. The workflow's `Sync App
-Settings` step maps it to the `GITHUB_TOKEN` app setting that the application reads:
+**1. Never write an empty value.** An earlier version interpolated secrets
+directly:
 
 ```yaml
-az webapp config appsettings set \
-  --settings \
-    GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN_AI }}"
+GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN_AI }}"   # ← don't do this
 ```
+
+`GITHUB_TOKEN_AI` was never created as a repo secret, so this expanded to `""`
+and overwrote a working App Setting on *every* deploy, silently disabling the AI
+features. The current step builds the argument list dynamically and skips empty
+values, emitting a `::warning::` instead:
+
+```yaml
+for NAME in FRED_API_KEY FRASER_API_KEY AZURE_OPENAI_ENDPOINT AZURE_OPENAI_DEPLOYMENT; do
+  VALUE="${!NAME:-}"
+  if [ -n "$VALUE" ]; then SETTINGS+=("$NAME=$VALUE"); fi
+done
+```
+
+**2. Pass secrets through `env:`, not string interpolation.** `${{ secrets.X }}`
+pasted into a shell script is a script-injection vector — a value containing
+shell metacharacters is executed. Binding to an environment variable and
+referencing `"$VAR"` avoids that entirely.
+
+> Historical note: a GitHub PAT used to be stored as `GITHUB_TOKEN_AI` because
+> GitHub reserves the secret name `GITHUB_TOKEN`. That indirection is gone —
+> GitHub Models was retired on 2026-07-30 and the app now authenticates to Azure
+> OpenAI with its managed identity, so there is no AI secret to sync at all.
 
 ---
 

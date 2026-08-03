@@ -17,7 +17,15 @@
 #    AZURE_SUBSCRIPTION_ID     Your Azure subscription ID
 #    FRED_API_KEY              Your FRED API key
 #    FRASER_API_KEY            Your FRASER API key
-#    GITHUB_TOKEN_AI           Your GitHub PAT (for Models API / AI features)
+#
+# And these repository *variables* (Settings → Secrets and variables →
+# Actions → Variables). They are not secrets — the app authenticates to Azure
+# OpenAI with its managed identity, so there is no API key to store:
+#
+#    Variable name             Value
+#    ─────────────────────     ────────────────────────────────────────────────
+#    AZURE_OPENAI_ENDPOINT     https://<resource>.cognitiveservices.azure.com
+#    AZURE_OPENAI_DEPLOYMENT   Your model deployment name (e.g. gpt-4o)
 #
 # ── App info (edit if you rename the Azure resources) ───────────────────────
 
@@ -143,20 +151,41 @@ jobs:
           app-name:  ${{ env.AZURE_WEBAPP_NAME }}
           package:   deploy.zip
 
-      # Keep runtime secrets in sync with what's in GitHub Secrets.
-      # Remove or comment out this step if you manage App Settings manually.
+      # Keep runtime settings in sync with what's in GitHub Secrets.
+      #
+      # Secrets are passed through `env:` rather than interpolated directly into
+      # the script, so a value containing shell metacharacters cannot break out
+      # of the command. Empty values are skipped instead of being written: an
+      # unset secret previously overwrote a working App Setting with "",
+      # which is how GITHUB_TOKEN silently disabled the AI features.
+      #
+      # AI auth uses the app's managed identity, so no key is synced here.
       - name: Sync App Settings
         uses: azure/CLI@9f7ce6f37c31b777ec6c6b6d1dfe7db79f497956 # v2.2.0
+        env:
+          FRED_API_KEY:            ${{ secrets.FRED_API_KEY }}
+          FRASER_API_KEY:          ${{ secrets.FRASER_API_KEY }}
+          AZURE_OPENAI_ENDPOINT:   ${{ vars.AZURE_OPENAI_ENDPOINT }}
+          AZURE_OPENAI_DEPLOYMENT: ${{ vars.AZURE_OPENAI_DEPLOYMENT }}
+          WEBAPP_NAME:             ${{ env.AZURE_WEBAPP_NAME }}
+          RESOURCE_GROUP:          ${{ env.AZURE_RESOURCE_GROUP }}
         with:
           inlineScript: |
+            set -euo pipefail
+            SETTINGS=(NODE_ENV=production)
+            for NAME in FRED_API_KEY FRASER_API_KEY AZURE_OPENAI_ENDPOINT AZURE_OPENAI_DEPLOYMENT; do
+              VALUE="${!NAME:-}"
+              if [ -n "$VALUE" ]; then
+                SETTINGS+=("$NAME=$VALUE")
+              else
+                echo "::warning::$NAME is empty; leaving the existing App Setting untouched."
+              fi
+            done
             az webapp config appsettings set \
-              --name ${{ env.AZURE_WEBAPP_NAME }} \
-              --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-              --settings \
-                NODE_ENV=production \
-                FRED_API_KEY="${{ secrets.FRED_API_KEY }}" \
-                FRASER_API_KEY="${{ secrets.FRASER_API_KEY }}" \
-                GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN_AI }}"
+              --name "$WEBAPP_NAME" \
+              --resource-group "$RESOURCE_GROUP" \
+              --settings "${SETTINGS[@]}" \
+              --output none
 
   # ── Validate ──────────────────────────────────────────────────────────────
   validate:

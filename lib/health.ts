@@ -19,9 +19,10 @@ export function getReadiness(env: Environment): {
 } {
   const fredConfigured = isConfigured(env.FRED_API_KEY);
   const fraserConfigured = isConfigured(env.FRASER_API_KEY);
-  const aiConfigured =
-    isConfigured(env.GITHUB_TOKEN) ||
-    (isConfigured(env.AZURE_OPENAI_ENDPOINT) && isConfigured(env.AZURE_OPENAI_API_KEY));
+  // GitHub Models was retired on 2026-07-30; Azure OpenAI is the only provider.
+  // The endpoint alone is sufficient because Azure authenticates with managed
+  // identity — an API key is optional and only used for local development.
+  const aiConfigured = isConfigured(env.AZURE_OPENAI_ENDPOINT);
 
   const status = !fredConfigured
     ? 'not_ready'

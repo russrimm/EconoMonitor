@@ -42,17 +42,27 @@ Open [http://localhost:3000](http://localhost:3000).
 ```env
 FRED_API_KEY=your_fred_api_key
 FRASER_API_KEY=your_fraser_api_key
-GITHUB_TOKEN=your_github_pat
+AZURE_OPENAI_ENDPOINT=https://your-resource.cognitiveservices.azure.com
+AZURE_OPENAI_DEPLOYMENT=gpt-4o
 ```
 
 | Key | Where to get it |
 |-----|----------------|
 | `FRED_API_KEY` | [api.stlouisfed.org/api_key.html](https://api.stlouisfed.org/api_key.html) (free) |
 | `FRASER_API_KEY` | [fraser.stlouisfed.org](https://fraser.stlouisfed.org) — request via `curl` command (free, see [BUILDING.md](./BUILDING.md#9-get-your-api-keys)) |
-| `GITHUB_TOKEN` | GitHub → Settings → Personal Access Tokens → Tokens (classic) — no scopes needed for Models API |
+| `AZURE_OPENAI_ENDPOINT` | Your Microsoft Foundry / Azure OpenAI resource endpoint |
+| `AZURE_OPENAI_DEPLOYMENT` | Your model deployment name (defaults to `gpt-4o`) |
 
-AI features send the selected FRED series values or chat text to the configured GitHub
-Models or Azure OpenAI provider. Do not enter personal, confidential, or regulated data.
+> **GitHub Models was retired on 2026-07-30** and is no longer a supported
+> provider. Azure OpenAI is now the only backend for the AI features.
+
+Authentication uses Microsoft Entra ID, not API keys. Locally, run `az login` and
+the app authenticates as you; in Azure it uses the App Service managed identity.
+Set `AZURE_OPENAI_API_KEY` only if you are targeting a resource that still
+permits local auth.
+
+AI features send the selected FRED series values or chat text to the configured
+Azure OpenAI deployment. Do not enter personal, confidential, or regulated data.
 The server bounds request size and model history, and AI responses are never cached.
 
 ### Quality checks
@@ -117,7 +127,24 @@ az webapp config appsettings set `
     NODE_ENV=production `
     FRED_API_KEY="<your-fred-api-key>" `
     FRASER_API_KEY="<your-fraser-api-key>" `
-    GITHUB_TOKEN="<your-github-pat>"
+    AZURE_OPENAI_ENDPOINT="https://<your-resource>.cognitiveservices.azure.com" `
+    AZURE_OPENAI_DEPLOYMENT="gpt-4o"
+
+# 6. Give the app a managed identity and grant it access to the model.
+#    This is why there is no AZURE_OPENAI_API_KEY above.
+az webapp identity assign `
+  --name economonitor `
+  --resource-group rg-economonitor
+
+$principalId = az webapp identity show `
+  --name economonitor --resource-group rg-economonitor --query principalId -o tsv
+
+az role assignment create `
+  --assignee-object-id $principalId `
+  --assignee-principal-type ServicePrincipal `
+  --role "Cognitive Services OpenAI User" `
+  --scope $(az cognitiveservices account show `
+    --name <your-openai-resource> --resource-group <its-rg> --query id -o tsv)
 ```
 
 ### Deploy (every release)
@@ -161,7 +188,14 @@ Required GitHub secrets (**Settings → Secrets and variables → Actions**):
 | `AZURE_SUBSCRIPTION_ID` | Your Azure subscription ID |
 | `FRED_API_KEY` | Your FRED API key |
 | `FRASER_API_KEY` | Your FRASER API key |
-| `GITHUB_TOKEN_AI` | Your GitHub PAT (for the AI features — stored as `GITHUB_TOKEN_AI` because GitHub reserves the name `GITHUB_TOKEN`) |
+
+Required GitHub *variables* (same page, **Variables** tab). These are not
+secrets — the app authenticates to Azure OpenAI with its managed identity:
+
+| Variable | Value |
+|----------|-------|
+| `AZURE_OPENAI_ENDPOINT` | `https://<your-resource>.cognitiveservices.azure.com` |
+| `AZURE_OPENAI_DEPLOYMENT` | Your model deployment name, e.g. `gpt-4o` |
 
 The easiest way to set up the OIDC trust and get the three Azure values is to use
 GitHub Copilot in Agent mode with the Azure MCP extension installed. See
