@@ -67,7 +67,12 @@ async function fetchCensusIndicator(
   signal: AbortSignal,
 ): Promise<CensusIndicator> {
   const url = new URL(`${CENSUS_BASE}/${definition.dataset}`);
-  url.searchParams.set('get', 'cell_value,time_slot_id,category_code,data_type_code,seasonally_adj');
+  // `geo_level_code` drives the national-only filter in parseCensusTimeseries;
+  // `time_slot_id` is a required predicate on the residential datasets.
+  url.searchParams.set(
+    'get',
+    'cell_value,geo_level_code,time_slot_id,category_code,data_type_code,seasonally_adj',
+  );
   url.searchParams.set('time', 'from 2015');
   url.searchParams.set('category_code', definition.categoryCode);
   url.searchParams.set('data_type_code', definition.dataTypeCode);

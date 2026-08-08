@@ -66,8 +66,8 @@ export const CENSUS_INDICATORS: readonly {
   {
     id: 'housing-starts',
     dataset: 'resconst',
-    categoryCode: 'TOTAL',
-    dataTypeCode: 'STARTS',
+    categoryCode: 'ASTARTS',
+    dataTypeCode: 'TOTAL',
     label: 'Housing starts',
     unit: 'thousands of units',
     note: 'Seasonally adjusted annual rate of new privately owned housing units started.',
@@ -75,8 +75,8 @@ export const CENSUS_INDICATORS: readonly {
   {
     id: 'new-home-sales',
     dataset: 'ressales',
-    categoryCode: 'TOTAL',
-    dataTypeCode: 'SOLD',
+    categoryCode: 'ASOLD',
+    dataTypeCode: 'TOTAL',
     label: 'New single-family home sales',
     unit: 'thousands of units',
     note: 'Seasonally adjusted annual rate.',
@@ -110,6 +110,16 @@ interface BeaRow {
 function percentChange(current: number, previous: number | null): number | null {
   if (previous === null || previous === 0) return null;
   return ((current - previous) / previous) * 100;
+}
+
+/**
+ * Aggregates BEA returns alongside the states themselves: `00000` is the
+ * national total and `91000`-`98000` are the eight BEA regions. Including them
+ * would rank "Far West" against California, so the table keeps states and DC
+ * only.
+ */
+export function isBeaStateFips(fips: string): boolean {
+  return /^\d{2}000$/.test(fips) && fips !== '00000' && !/^9/.test(fips);
 }
 
 /**
@@ -149,8 +159,7 @@ export function parseStateGdp(payload: unknown): {
 
     const value = parseBeaValue(row.DataValue);
     if (value === null) continue;
-    // The national aggregate is excluded so the map only carries states.
-    if (row.GeoFips === '00000') continue;
+    if (!isBeaStateFips(row.GeoFips)) continue;
 
     if (!unit && typeof row.CL_UNIT === 'string') unit = row.CL_UNIT;
     const period = row.TimePeriod.trim();
@@ -208,6 +217,11 @@ export function parseCensusPeriod(value: string): string | null {
 /**
  * Census returns a header row followed by data rows, both as string arrays.
  * Column order is not guaranteed, so values are looked up by header name.
+ *
+ * `resconst` and `ressales` report each period five times — once nationally and
+ * once per census region — so rows are narrowed to `geo_level_code` `US`.
+ * Without that filter a region's value silently stands in for the national one.
+ * The column is absent on single-geography datasets, which are kept as-is.
  */
 export function parseCensusTimeseries(payload: unknown): CensusObservation[] {
   if (!Array.isArray(payload) || payload.length < 2) {
@@ -223,10 +237,13 @@ export function parseCensusTimeseries(payload: unknown): CensusObservation[] {
   if (valueIndex === -1 || timeIndex === -1) {
     throw new Error('Census response was missing cell_value or time');
   }
+  const geoIndex = header.indexOf('geo_level_code');
 
   const observations: CensusObservation[] = [];
   for (const row of rows) {
     if (!Array.isArray(row)) continue;
+    if (geoIndex !== -1 && row[geoIndex] !== 'US') continue;
+
     const rawTime = row[timeIndex];
     const rawValue = row[valueIndex];
     if (typeof rawTime !== 'string' || typeof rawValue !== 'string') continue;

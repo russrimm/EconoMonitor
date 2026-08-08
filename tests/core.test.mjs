@@ -58,6 +58,8 @@ import {
 } from '../lib/energy.ts';
 import {
   buildCensusIndicator,
+  CENSUS_INDICATORS,
+  isBeaStateFips,
   parseBeaValue,
   parseCensusPeriod,
   parseCensusTimeseries,
@@ -892,6 +894,7 @@ test('BEA state GDP reduces to the latest period with period-over-period growth'
           { GeoFips: '01000', GeoName: 'Alabama', TimePeriod: '2025Q4', DataValue: '206,000' },
           { GeoFips: '01000', GeoName: 'Alabama', TimePeriod: '2026Q1', DataValue: '210,000' },
           { GeoFips: '02000', GeoName: 'Alaska', TimePeriod: '2026Q1', DataValue: '(NA)' },
+          { GeoFips: '98000', GeoName: 'Far West', TimePeriod: '2026Q1', DataValue: '4,000,000', CL_UNIT: 'Millions of chained 2017 dollars' },
         ],
       },
     },
@@ -899,7 +902,8 @@ test('BEA state GDP reduces to the latest period with period-over-period growth'
 
   const parsed = parseStateGdp(payload);
   assert.equal(parsed.period, '2026Q1');
-  // The national aggregate and the suppressed state are both excluded.
+  // The national aggregate, the BEA region, and the suppressed state are all
+  // excluded, leaving only real states.
   assert.deepEqual(parsed.states.map((state) => state.name), ['Alabama']);
 
   const alabama = parsed.states[0];
@@ -926,6 +930,50 @@ test('Census timeseries reads columns by header name, not position', () => {
   ]);
   assert.equal(parseCensusPeriod('2026-13'), null);
   assert.throws(() => parseCensusTimeseries([['cell_value']]), /timeseries table/);
+});
+
+test('BEA region and aggregate FIPS codes are not treated as states', () => {
+  assert.equal(isBeaStateFips('01000'), true);
+  assert.equal(isBeaStateFips('11000'), true);
+  // National total.
+  assert.equal(isBeaStateFips('00000'), false);
+  // The eight BEA regions share the 9x000 range.
+  for (const region of ['91000', '92000', '95000', '98000']) {
+    assert.equal(isBeaStateFips(region), false);
+  }
+});
+
+test('Census keeps only national rows when a geography column is present', () => {
+  // resconst and ressales repeat every period once per census region, so an
+  // unfiltered parse would let a region stand in for the national figure.
+  const observations = parseCensusTimeseries([
+    ['cell_value', 'geo_level_code', 'time_slot_id', 'time'],
+    ['248', 'MW', '0', '2026-06'],
+    ['129', 'NO', '0', '2026-06'],
+    ['741', 'SO', '0', '2026-06'],
+    ['1427', 'US', '0', '2026-06'],
+    ['309', 'WE', '0', '2026-06'],
+    ['1199', 'US', '0', '2026-05'],
+  ]);
+
+  assert.deepEqual(observations, [
+    { date: '2026-05-01', value: 1199 },
+    { date: '2026-06-01', value: 1427 },
+  ]);
+});
+
+test('Census indicator codes match the live EITS vocabulary', () => {
+  // These pairs are easy to invert; the API answers an invalid pair with an
+  // empty result set rather than an error, so they are pinned here.
+  const byId = Object.fromEntries(
+    CENSUS_INDICATORS.map((indicator) => [indicator.id, indicator]),
+  );
+  assert.equal(byId['retail-sales'].categoryCode, '44X72');
+  assert.equal(byId['retail-sales'].dataTypeCode, 'SM');
+  assert.equal(byId['housing-starts'].categoryCode, 'ASTARTS');
+  assert.equal(byId['housing-starts'].dataTypeCode, 'TOTAL');
+  assert.equal(byId['new-home-sales'].categoryCode, 'ASOLD');
+  assert.equal(byId['new-home-sales'].dataTypeCode, 'TOTAL');
 });
 
 test('Census indicators compare against the same calendar month, not row offsets', () => {
