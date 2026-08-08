@@ -47,7 +47,14 @@ completed by describing what you want to Copilot in Agent mode — no manual CLI
 |----------|----------------|
 | `FRED_API_KEY` | [api.stlouisfed.org/api_key.html](https://api.stlouisfed.org/api_key.html) |
 | `FRASER_API_KEY` | [fraser.stlouisfed.org](https://fraser.stlouisfed.org) developer portal |
+| `EIA_API_KEY` | [eia.gov/opendata/register.php](https://www.eia.gov/opendata/register.php) — optional, powers `/energy` |
+| `BEA_API_KEY` | [apps.bea.gov/API/signup](https://apps.bea.gov/API/signup/) — optional, powers state GDP on `/regional` |
+| `CENSUS_API_KEY` | [api.census.gov/data/key_signup.html](https://api.census.gov/data/key_signup.html) — optional, powers the indicators on `/regional` |
 | Azure OpenAI access | A Microsoft Foundry / Azure OpenAI resource with a chat deployment (e.g. `gpt-4o`). No key required — see Section 3a. |
+
+The three optional keys are genuinely optional. `/rates` needs no key at all,
+and `/energy` and `/regional` render a signup prompt rather than an error when
+theirs are absent, so readiness stays healthy either way.
 
 Log in to Azure before running any commands below:
 
@@ -162,6 +169,9 @@ az webapp config appsettings set \
     NODE_ENV=production \
     FRED_API_KEY="<your-fred-api-key>" \
     FRASER_API_KEY="<your-fraser-api-key>" \
+    EIA_API_KEY="<your-eia-api-key>" \
+    BEA_API_KEY="<your-bea-api-key>" \
+    CENSUS_API_KEY="<your-census-api-key>" \
     AZURE_OPENAI_ENDPOINT="https://<your-resource>.cognitiveservices.azure.com" \
     AZURE_OPENAI_DEPLOYMENT="gpt-4o"
 ```
@@ -379,6 +389,9 @@ your GitHub repo under **Settings → Secrets and variables → Actions**:
 | `AZURE_SUBSCRIPTION_ID` | Azure subscription ID | Output from Copilot in step 6a |
 | `FRED_API_KEY` | FRED API key | [api.stlouisfed.org](https://api.stlouisfed.org/api_key.html) |
 | `FRASER_API_KEY` | FRASER API key | [fraser.stlouisfed.org](https://fraser.stlouisfed.org) |
+| `EIA_API_KEY` | EIA API key (optional) | [eia.gov/opendata](https://www.eia.gov/opendata/register.php) |
+| `BEA_API_KEY` | BEA API key (optional) | [apps.bea.gov/API/signup](https://apps.bea.gov/API/signup/) |
+| `CENSUS_API_KEY` | Census API key (optional) | [api.census.gov](https://api.census.gov/data/key_signup.html) |
 
 Then add these as repository **Variables** (same page, *Variables* tab). They
 are configuration, not secrets — the app authenticates with managed identity:

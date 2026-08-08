@@ -18,6 +18,14 @@
 #    FRED_API_KEY              Your FRED API key
 #    FRASER_API_KEY            Your FRASER API key
 #
+# These three are optional. Without them the app still runs: /rates needs no
+# key at all, while /energy and /regional render a signup prompt instead of
+# data, and readiness reports them as unconfigured without going degraded.
+#
+#    EIA_API_KEY               https://www.eia.gov/opendata/register.php
+#    BEA_API_KEY               https://apps.bea.gov/API/signup/
+#    CENSUS_API_KEY            https://api.census.gov/data/key_signup.html
+#
 # And these repository *variables* (Settings → Secrets and variables →
 # Actions → Variables). They are not secrets — the app authenticates to Azure
 # OpenAI with its managed identity, so there is no API key to store:
@@ -165,6 +173,9 @@ jobs:
         env:
           FRED_API_KEY:            ${{ secrets.FRED_API_KEY }}
           FRASER_API_KEY:          ${{ secrets.FRASER_API_KEY }}
+          EIA_API_KEY:             ${{ secrets.EIA_API_KEY }}
+          BEA_API_KEY:             ${{ secrets.BEA_API_KEY }}
+          CENSUS_API_KEY:          ${{ secrets.CENSUS_API_KEY }}
           AZURE_OPENAI_ENDPOINT:   ${{ vars.AZURE_OPENAI_ENDPOINT }}
           AZURE_OPENAI_DEPLOYMENT: ${{ vars.AZURE_OPENAI_DEPLOYMENT }}
           WEBAPP_NAME:             ${{ env.AZURE_WEBAPP_NAME }}
@@ -173,7 +184,7 @@ jobs:
           inlineScript: |
             set -euo pipefail
             SETTINGS=(NODE_ENV=production)
-            for NAME in FRED_API_KEY FRASER_API_KEY AZURE_OPENAI_ENDPOINT AZURE_OPENAI_DEPLOYMENT; do
+            for NAME in FRED_API_KEY FRASER_API_KEY EIA_API_KEY BEA_API_KEY CENSUS_API_KEY AZURE_OPENAI_ENDPOINT AZURE_OPENAI_DEPLOYMENT; do
               VALUE="${!NAME:-}"
               if [ -n "$VALUE" ]; then
                 SETTINGS+=("$NAME=$VALUE")
