@@ -11,7 +11,16 @@ export type UpstreamOutcome =
   | 'network_error';
 
 interface UpstreamContext {
-  service: 'fred' | 'fraser' | 'gdelt' | 'federal_reserve';
+  service:
+    | 'fred'
+    | 'fraser'
+    | 'gdelt'
+    | 'federal_reserve'
+    | 'treasury'
+    | 'new_york_fed'
+    | 'eia'
+    | 'bea'
+    | 'census';
   operation: string;
   timeoutMs: number;
   cachePolicy: 'no-store' | `revalidate-${number}`;

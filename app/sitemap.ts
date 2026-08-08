@@ -10,6 +10,9 @@ const ROUTES = [
   '/builder',
   '/categories',
   '/releases',
+  '/rates',
+  '/energy',
+  '/regional',
   '/news',
   '/fraser',
   '/insights',
@@ -20,6 +23,9 @@ const ROUTES = [
 export default function sitemap(): MetadataRoute.Sitemap {
   return ROUTES.map((route) => ({
     url: new URL(route || '/', SITE_URL).toString(),
-    changeFrequency: route === '' || route === '/news' ? 'daily' : 'weekly',
+    changeFrequency:
+      route === '' || route === '/news' || route === '/rates'
+        ? 'daily'
+        : 'weekly',
   }));
 }

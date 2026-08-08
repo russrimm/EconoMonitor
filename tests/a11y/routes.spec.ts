@@ -93,6 +93,108 @@ async function mockPublicApis(page: Page) {
       }),
     });
   });
+
+  await page.route('**/api/rates', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        curve: {
+          latest: {
+            date: '2026-08-07',
+            points: [
+              { label: '3M', months: 3, percent: 3.87 },
+              { label: '2Y', months: 24, percent: 4.19 },
+              { label: '10Y', months: 120, percent: 4.65 },
+              { label: '30Y', months: 360, percent: 5.19 },
+            ],
+          },
+          monthAgo: {
+            date: '2026-07-31',
+            points: [
+              { label: '3M', months: 3, percent: 3.9 },
+              { label: '10Y', months: 120, percent: 4.6 },
+            ],
+          },
+          yearAgo: null,
+          spreads: [
+            { label: '10Y − 2Y', shortLabel: '2Y', longLabel: '10Y', basisPoints: 46 },
+            { label: '10Y − 3M', shortLabel: '3M', longLabel: '10Y', basisPoints: 78 },
+          ],
+        },
+        referenceRates: [{
+          type: 'SOFR',
+          label: 'Secured Overnight Financing Rate',
+          effectiveDate: '2026-08-06',
+          percent: 3.65,
+          volumeInBillions: 3055,
+          targetRateFrom: null,
+          targetRateTo: null,
+        }],
+        sofrAverages: null,
+        updatedAt: '2026-08-07T12:00:00.000Z',
+        providers: ['U.S. Treasury', 'New York Fed'],
+        partial: false,
+      }),
+    });
+  });
+
+  await page.route('**/api/energy', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        series: [{
+          id: 'RWTC',
+          label: 'WTI crude oil spot',
+          unit: '$/barrel',
+          category: 'Crude oil',
+          latest: { date: '2026-08-05', value: 66.2 },
+          changeOnWeek: 1.7,
+          changeOnYear: -4.2,
+          observations: [
+            { date: '2026-07-29', value: 65.1 },
+            { date: '2026-08-05', value: 66.2 },
+          ],
+        }],
+        updatedAt: '2026-08-07T12:00:00.000Z',
+        partial: false,
+        configured: true,
+      }),
+    });
+  });
+
+  await page.route('**/api/regional', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        stateGdp: {
+          period: '2026Q1',
+          unit: 'Millions of chained 2017 dollars',
+          states: [{
+            fips: '01000',
+            name: 'Alabama',
+            period: '2026Q1',
+            value: 210000,
+            changeOnQuarter: 1.94,
+            changeOnYear: 5,
+          }],
+        },
+        indicators: [{
+          id: 'retail-sales',
+          label: 'Advance retail and food services sales',
+          unit: '$M',
+          note: 'Seasonally adjusted.',
+          latest: { date: '2026-06-01', value: 720000 },
+          changeOnMonth: 0.4,
+          changeOnYear: 3.1,
+          observations: [{ date: '2026-06-01', value: 720000 }],
+        }],
+        updatedAt: '2026-08-07T12:00:00.000Z',
+        partial: false,
+        beaConfigured: true,
+        censusConfigured: true,
+      }),
+    });
+  });
 }
 
 async function expectAccessible(
@@ -137,6 +239,26 @@ test('news has no automated WCAG A/AA violations', async ({ page }) => {
 test('compare has no automated WCAG A/AA violations', async ({ page }) => {
   await expectAccessible(page, '/compare?ids=GDP,UNRATE', async (loadedPage) => {
     await loadedPage.getByRole('img', { name: /Comparison chart/ }).waitFor();
+  });
+});
+
+test('rates has no automated WCAG A/AA violations', async ({ page }) => {
+  await expectAccessible(page, '/rates', async (loadedPage) => {
+    await loadedPage.getByRole('img', { name: /Treasury par yield curve/ }).waitFor();
+  });
+});
+
+test('energy has no automated WCAG A/AA violations', async ({ page }) => {
+  await expectAccessible(page, '/energy', async (loadedPage) => {
+    await loadedPage.getByRole('heading', { name: 'WTI crude oil spot' }).waitFor();
+  });
+});
+
+test('regional has no automated WCAG A/AA violations', async ({ page }) => {
+  await expectAccessible(page, '/regional', async (loadedPage) => {
+    await loadedPage
+      .getByRole('heading', { name: /Real GDP by state/ })
+      .waitFor();
   });
 });
 

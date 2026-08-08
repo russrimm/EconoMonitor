@@ -43,6 +43,29 @@ import {
   parseGdeltDate,
 } from '../lib/news.ts';
 import {
+  calculateSpreads,
+  parseReferenceRates,
+  parseSofrAverages,
+  parseTreasuryDate,
+  parseYieldCurveXml,
+  treasuryMonthParameter,
+} from '../lib/rates.ts';
+import {
+  findComparison,
+  groupEiaRows,
+  parseEiaPeriod,
+  percentChange,
+} from '../lib/energy.ts';
+import {
+  buildCensusIndicator,
+  CENSUS_INDICATORS,
+  isBeaStateFips,
+  parseBeaValue,
+  parseCensusPeriod,
+  parseCensusTimeseries,
+  parseStateGdp,
+} from '../lib/regional.ts';
+import {
   fetchUpstream,
   logUpstreamSuccess,
   readLimitedJson as readLimitedUpstreamJson,
@@ -690,4 +713,289 @@ test('.npmrc pins the public npm registry', () => {
     readFileSync(npmrc, 'utf8'),
     /^\s*registry\s*=\s*https:\/\/registry\.npmjs\.org\/?\s*$/m,
   );
+});
+
+const TREASURY_XML_FIXTURE = `<?xml version="1.0" encoding="utf-8" standalone="yes" ?>
+<feed xmlns:d="http://schemas.microsoft.com/ado/2007/08/dataservices" xmlns:m="http://schemas.microsoft.com/ado/2007/08/dataservices/metadata" xmlns="http://www.w3.org/2005/Atom">
+<entry><content type="application/xml"><m:properties>
+<d:NEW_DATE m:type="Edm.DateTime">2026-08-06T00:00:00</d:NEW_DATE>
+<d:BC_3MONTH m:type="Edm.Double">3.85</d:BC_3MONTH>
+<d:BC_2YEAR m:type="Edm.Double">4.15</d:BC_2YEAR>
+<d:BC_5YEAR m:type="Edm.Double">4.30</d:BC_5YEAR>
+<d:BC_10YEAR m:type="Edm.Double">4.60</d:BC_10YEAR>
+<d:BC_30YEAR m:type="Edm.Double">5.15</d:BC_30YEAR>
+</m:properties></content></entry>
+<entry><content type="application/xml"><m:properties>
+<d:NEW_DATE m:type="Edm.DateTime">2026-08-07T00:00:00</d:NEW_DATE>
+<d:BC_3MONTH m:type="Edm.Double">3.87</d:BC_3MONTH>
+<d:BC_2YEAR m:type="Edm.Double">4.19</d:BC_2YEAR>
+<d:BC_5YEAR m:type="Edm.Double">4.35</d:BC_5YEAR>
+<d:BC_10YEAR m:type="Edm.Double">4.65</d:BC_10YEAR>
+<d:BC_20YEAR m:type="Edm.Double"></d:BC_20YEAR>
+<d:BC_30YEAR m:type="Edm.Double">5.19</d:BC_30YEAR>
+</m:properties></content></entry>
+<entry><content type="application/xml"><m:properties>
+<d:NEW_DATE m:type="Edm.DateTime">2026-08-08T00:00:00</d:NEW_DATE>
+<d:BC_3MONTH m:type="Edm.Double">3.90</d:BC_3MONTH>
+</m:properties></content></entry>
+</feed>`;
+
+test('Treasury yield curves parse in date order and drop unusable days', () => {
+  const snapshots = parseYieldCurveXml(TREASURY_XML_FIXTURE);
+
+  // The third entry carries a single maturity, which cannot be drawn as a curve.
+  assert.equal(snapshots.length, 2);
+  assert.deepEqual(
+    snapshots.map((snapshot) => snapshot.date),
+    ['2026-08-06', '2026-08-07'],
+  );
+
+  const latest = snapshots.at(-1);
+  // The empty 20Y element is skipped rather than becoming NaN.
+  assert.deepEqual(
+    latest.points.map((point) => point.label),
+    ['3M', '2Y', '5Y', '10Y', '30Y'],
+  );
+  // Maturities must stay ascending so the curve is drawn left to right.
+  const months = latest.points.map((point) => point.months);
+  assert.deepEqual(months, [...months].sort((a, b) => a - b));
+});
+
+test('Treasury dates are read as calendar days rather than local timestamps', () => {
+  // A naive timestamp must not shift a day backwards west of UTC.
+  assert.equal(parseTreasuryDate('2026-08-07T00:00:00'), '2026-08-07');
+  assert.equal(parseTreasuryDate('2026-08-06'), '2026-08-06');
+  assert.equal(parseTreasuryDate('2026-02-30'), null);
+  assert.equal(parseTreasuryDate('not-a-date'), null);
+});
+
+test('yield spreads are reported in whole basis points and flag inversion', () => {
+  const snapshots = parseYieldCurveXml(TREASURY_XML_FIXTURE);
+  const spreads = calculateSpreads(snapshots.at(-1));
+
+  const twosTens = spreads.find((spread) => spread.label === '10Y − 2Y');
+  // 4.65 - 4.19 is 0.46000000000000085 in binary floating point.
+  assert.equal(twosTens.basisPoints, 46);
+
+  const inverted = calculateSpreads({
+    date: '2026-08-07',
+    points: [
+      { label: '2Y', months: 24, percent: 4.8 },
+      { label: '10Y', months: 120, percent: 4.3 },
+    ],
+  });
+  assert.equal(inverted[0].basisPoints, -50);
+});
+
+test('Treasury month parameters roll back across year boundaries in UTC', () => {
+  const january = new Date('2026-01-15T00:00:00Z');
+  assert.equal(treasuryMonthParameter(january), '202601');
+  assert.equal(treasuryMonthParameter(january, -1), '202512');
+  assert.equal(treasuryMonthParameter(january, -12), '202501');
+});
+
+test('New York Fed reference rates keep display order and separate SOFR averages', () => {
+  const payload = {
+    refRates: [
+      { effectiveDate: '2026-08-07', type: 'SOFRAI', average30day: 3.62347, index: 1.25 },
+      { effectiveDate: '2026-08-06', type: 'SOFR', percentRate: 3.65, volumeInBillions: 3055 },
+      {
+        effectiveDate: '2026-08-06',
+        type: 'EFFR',
+        percentRate: 3.63,
+        targetRateFrom: 3.5,
+        targetRateTo: 3.75,
+      },
+      { effectiveDate: '2026-08-06', type: 'UNKNOWN', percentRate: 1 },
+    ],
+  };
+
+  const rates = parseReferenceRates(payload);
+  // SOFRAI carries no percentRate and UNKNOWN has no label, so neither is a row.
+  assert.deepEqual(rates.map((rate) => rate.type), ['EFFR', 'SOFR']);
+  assert.equal(rates[0].targetRateTo, 3.75);
+  assert.equal(rates[1].volumeInBillions, 3055);
+
+  const averages = parseSofrAverages(payload);
+  assert.equal(averages.average30day, 3.62347);
+  assert.equal(averages.average90day, null);
+
+  assert.throws(() => parseReferenceRates({}), /reference rates/);
+});
+
+test('EIA rows group by series into ascending observations', () => {
+  const grouped = groupEiaRows({
+    response: {
+      data: [
+        { period: '2026-08-03', series: 'RWTC', value: 66.2 },
+        { period: '2026-07-27', series: 'RWTC', value: 65.1 },
+        { period: '2026-08-03', series: 'RBRTE', value: '69.4' },
+        { period: '2026-08-10', series: 'RWTC', value: null },
+        { period: 'bad-date', series: 'RWTC', value: 1 },
+      ],
+    },
+  });
+
+  assert.deepEqual(
+    grouped.get('RWTC').map((observation) => observation.date),
+    ['2026-07-27', '2026-08-03'],
+  );
+  // String values are coerced; null and malformed periods are dropped.
+  assert.equal(grouped.get('RBRTE')[0].value, 69.4);
+  assert.equal(parseEiaPeriod('2026-13-01'), null);
+  assert.throws(() => groupEiaRows({ response: {} }), /data rows/);
+});
+
+test('EIA comparisons only match observations inside the intended window', () => {
+  const observations = [
+    { date: '2025-08-04', value: 100 },
+    { date: '2026-07-31', value: 110 },
+    { date: '2026-08-07', value: 121 },
+  ];
+
+  const weekAgo = findComparison(observations, 7);
+  assert.equal(weekAgo.date, '2026-07-31');
+  assert.equal(Math.round(percentChange(observations.at(-1), weekAgo)), 10);
+
+  const yearAgo = findComparison(observations, 365);
+  assert.equal(yearAgo.date, '2025-08-04');
+
+  // A series with only a distant prior point must not fake a week-ago change.
+  assert.equal(
+    findComparison(
+      [
+        { date: '2020-01-01', value: 1 },
+        { date: '2026-08-07', value: 2 },
+      ],
+      7,
+    ),
+    null,
+  );
+  assert.equal(percentChange({ date: '2026-08-07', value: 5 }, null), null);
+});
+
+test('BEA display values survive thousands separators and suppression markers', () => {
+  assert.equal(parseBeaValue('1,234.5'), 1234.5);
+  assert.equal(parseBeaValue('(NA)'), null);
+  assert.equal(parseBeaValue('(D)'), null);
+  assert.equal(parseBeaValue(''), null);
+  assert.equal(parseBeaValue(42), 42);
+});
+
+test('BEA state GDP reduces to the latest period with period-over-period growth', () => {
+  const payload = {
+    BEAAPI: {
+      Results: {
+        Data: [
+          { GeoFips: '00000', GeoName: 'United States', TimePeriod: '2026Q1', DataValue: '9,999', CL_UNIT: 'Millions of chained 2017 dollars' },
+          { GeoFips: '01000', GeoName: 'Alabama', TimePeriod: '2025Q1', DataValue: '200,000', CL_UNIT: 'Millions of chained 2017 dollars' },
+          { GeoFips: '01000', GeoName: 'Alabama', TimePeriod: '2025Q2', DataValue: '202,000' },
+          { GeoFips: '01000', GeoName: 'Alabama', TimePeriod: '2025Q3', DataValue: '204,000' },
+          { GeoFips: '01000', GeoName: 'Alabama', TimePeriod: '2025Q4', DataValue: '206,000' },
+          { GeoFips: '01000', GeoName: 'Alabama', TimePeriod: '2026Q1', DataValue: '210,000' },
+          { GeoFips: '02000', GeoName: 'Alaska', TimePeriod: '2026Q1', DataValue: '(NA)' },
+          { GeoFips: '98000', GeoName: 'Far West', TimePeriod: '2026Q1', DataValue: '4,000,000', CL_UNIT: 'Millions of chained 2017 dollars' },
+        ],
+      },
+    },
+  };
+
+  const parsed = parseStateGdp(payload);
+  assert.equal(parsed.period, '2026Q1');
+  // The national aggregate, the BEA region, and the suppressed state are all
+  // excluded, leaving only real states.
+  assert.deepEqual(parsed.states.map((state) => state.name), ['Alabama']);
+
+  const alabama = parsed.states[0];
+  assert.equal(alabama.value, 210000);
+  assert.equal(Number(alabama.changeOnQuarter.toFixed(3)), 1.942);
+  assert.equal(Number(alabama.changeOnYear.toFixed(1)), 5);
+  assert.match(parsed.unit, /chained/);
+
+  assert.throws(() => parseStateGdp({}), /BEA data rows/);
+});
+
+test('Census timeseries reads columns by header name, not position', () => {
+  const observations = parseCensusTimeseries([
+    ['time_slot_id', 'cell_value', 'time'],
+    ['1', '700,000', '2026-05'],
+    ['1', '710000', '2026-06'],
+    ['1', 'not-a-number', '2026-07'],
+    ['1', '705000', 'bad-period'],
+  ]);
+
+  assert.deepEqual(observations, [
+    { date: '2026-05-01', value: 700000 },
+    { date: '2026-06-01', value: 710000 },
+  ]);
+  assert.equal(parseCensusPeriod('2026-13'), null);
+  assert.throws(() => parseCensusTimeseries([['cell_value']]), /timeseries table/);
+});
+
+test('BEA region and aggregate FIPS codes are not treated as states', () => {
+  assert.equal(isBeaStateFips('01000'), true);
+  assert.equal(isBeaStateFips('11000'), true);
+  // National total.
+  assert.equal(isBeaStateFips('00000'), false);
+  // The eight BEA regions share the 9x000 range.
+  for (const region of ['91000', '92000', '95000', '98000']) {
+    assert.equal(isBeaStateFips(region), false);
+  }
+});
+
+test('Census keeps only national rows when a geography column is present', () => {
+  // resconst and ressales repeat every period once per census region, so an
+  // unfiltered parse would let a region stand in for the national figure.
+  const observations = parseCensusTimeseries([
+    ['cell_value', 'geo_level_code', 'time_slot_id', 'time'],
+    ['248', 'MW', '0', '2026-06'],
+    ['129', 'NO', '0', '2026-06'],
+    ['741', 'SO', '0', '2026-06'],
+    ['1427', 'US', '0', '2026-06'],
+    ['309', 'WE', '0', '2026-06'],
+    ['1199', 'US', '0', '2026-05'],
+  ]);
+
+  assert.deepEqual(observations, [
+    { date: '2026-05-01', value: 1199 },
+    { date: '2026-06-01', value: 1427 },
+  ]);
+});
+
+test('Census indicator codes match the live EITS vocabulary', () => {
+  // These pairs are easy to invert; the API answers an invalid pair with an
+  // empty result set rather than an error, so they are pinned here.
+  const byId = Object.fromEntries(
+    CENSUS_INDICATORS.map((indicator) => [indicator.id, indicator]),
+  );
+  assert.equal(byId['retail-sales'].categoryCode, '44X72');
+  assert.equal(byId['retail-sales'].dataTypeCode, 'SM');
+  assert.equal(byId['housing-starts'].categoryCode, 'ASTARTS');
+  assert.equal(byId['housing-starts'].dataTypeCode, 'TOTAL');
+  assert.equal(byId['new-home-sales'].categoryCode, 'ASOLD');
+  assert.equal(byId['new-home-sales'].dataTypeCode, 'TOTAL');
+});
+
+test('Census indicators compare against the same calendar month, not row offsets', () => {
+  const definition = {
+    id: 'retail-sales',
+    dataset: 'marts',
+    categoryCode: '44X72',
+    dataTypeCode: 'SM',
+    label: 'Advance retail and food services sales',
+    unit: '$M',
+    note: '',
+  };
+  // June is deliberately missing so a positional lookback would compare the
+  // wrong month.
+  const indicator = buildCensusIndicator(definition, [
+    { date: '2025-07-01', value: 600000 },
+    { date: '2026-05-01', value: 700000 },
+    { date: '2026-07-01', value: 720000 },
+  ]);
+
+  assert.equal(indicator.latest.value, 720000);
+  assert.equal(indicator.changeOnMonth, null);
+  assert.equal(Number(indicator.changeOnYear.toFixed(0)), 20);
+  assert.equal(buildCensusIndicator(definition, []), null);
 });

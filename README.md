@@ -12,10 +12,14 @@ insights and an interactive chat interface.
 - FRASER historical archives — themes, timelines, and primary-source documents
 - AI Insights panel and streaming chat for natural-language economic Q&A
 - Release calendar for upcoming FRED data publications
+- Treasury par yield curve with 10Y−2Y, 10Y−3M and 30Y−5Y spreads, plus the New York Fed's overnight reference rates (SOFR, EFFR, OBFR, BGCR, TGCR)
+- Energy prices from the EIA — retail gasoline and diesel, WTI and Brent crude, Henry Hub natural gas
+- Real GDP by state from the BEA, with Census retail sales, housing starts and new home sales
 - Latest financial news headlines from the free GDELT DOC API and Federal Reserve RSS
 
-FRED responses are cached for five minutes, FRASER responses for one hour, and news
-responses for fifteen minutes. Observation dates and source links are shown in the UI;
+FRED responses are cached for five minutes, FRASER responses for one hour, news
+responses for fifteen minutes, rates for thirty minutes, energy prices for one hour,
+and regional data for six hours. Observation dates and source links are shown in the UI;
 data is current to each source's latest published release rather than tick-by-tick real time.
 
 **Tech stack:** Next.js 16 · React 19 · TypeScript · Tailwind CSS v4 · TanStack Query v5 · Chart.js · Azure App Service
@@ -52,6 +56,21 @@ AZURE_OPENAI_DEPLOYMENT=gpt-4o
 | `FRASER_API_KEY` | [fraser.stlouisfed.org](https://fraser.stlouisfed.org) — request via `curl` command (free, see [BUILDING.md](./BUILDING.md#9-get-your-api-keys)) |
 | `AZURE_OPENAI_ENDPOINT` | Your Microsoft Foundry / Azure OpenAI resource endpoint |
 | `AZURE_OPENAI_DEPLOYMENT` | Your model deployment name (defaults to `gpt-4o`) |
+
+### Optional data feeds
+
+These are all free and each one only enhances a single page. If a key is absent
+the page renders an explanatory empty state instead of failing, and readiness
+reports it as unconfigured without marking the deployment unhealthy.
+
+| Key | Powers | Where to get it |
+|-----|--------|----------------|
+| `EIA_API_KEY` | `/energy` — fuel, crude, and natural gas prices | [eia.gov/opendata/register.php](https://www.eia.gov/opendata/register.php) (free) |
+| `BEA_API_KEY` | `/regional` — real GDP by state | [apps.bea.gov/API/signup](https://apps.bea.gov/API/signup/) (free) |
+| `CENSUS_API_KEY` | `/regional` — retail sales and housing | [api.census.gov/data/key_signup.html](https://api.census.gov/data/key_signup.html) (free) |
+
+The `/rates` page needs no key at all. The Treasury par yield curve feed and the
+New York Fed reference rates API are both open, so it works on a bare checkout.
 
 > **GitHub Models was retired on 2026-07-30** and is no longer a supported
 > provider. Azure OpenAI is now the only backend for the AI features.
