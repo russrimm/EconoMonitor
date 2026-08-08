@@ -73,6 +73,12 @@ import {
 } from '../lib/upstream.ts';
 import {
   formatFraserDate,
+  getEventDate,
+  getEventDateLabel,
+  getEventDescription,
+  getEventTitle,
+  parseEventLinks,
+  stripHtml,
 } from '../lib/fraser.ts';
 import { readBoundedResponseText } from '../lib/responseBody.ts';
 import {
@@ -556,11 +562,25 @@ test('FRASER success payload validation rejects malformed 200 responses', async 
     id: 'timeline-1',
     url: 'https://fraser.stlouisfed.org/timeline/1',
     title: 'Financial History',
+    description: '',
+    created: '2016-03-03 08:51:55.587701',
+    modified: null,
+    abstract: '<p>Archived timeline.</p>',
   };
   const event = {
-    title: 'Policy event',
-    date: '2026-03-01',
-    location: { url: ['https://fraser.stlouisfed.org/event/1'] },
+    id: '8',
+    timeline_url: 'financial-crisis',
+    headline: 'U.S. Bankruptcy Filing: Bear Stearns',
+    description: 'Bear Stearns liquidates two hedge funds.',
+    date_string: 'July 31, 2007',
+    date_start: '2007-07-31',
+    date_end: null,
+    links: 'Bankruptcy Filing@https://fraser.stlouisfed.org/title/4972',
+    created: '2016-03-03 09:01:14.133369',
+    modified: null,
+    sortOrder: '8',
+    images: [],
+    av: [],
   };
 
   assert.equal(validateFraserPayload('theme', envelope([theme])), true);
@@ -572,6 +592,15 @@ test('FRASER success payload validation rejects malformed 200 responses', async 
   assert.equal(validateFraserPayload('title/1', envelope([record])), true);
   assert.equal(validateFraserPayload('title/1/items', envelope([record])), true);
   assert.equal(validateFraserPayload('item/1', envelope([record])), true);
+  // FRASER omits recordType and returns scalar dateIssued on some records.
+  assert.equal(
+    validateFraserPayload('title/1', envelope([{
+      ...record,
+      recordInfo: { recordIdentifier: ['610602'], recordType: null },
+      originInfo: { dateIssued: 'December 3, 1962' },
+    }])),
+    true,
+  );
   assert.equal(
     validateFraserPayload('theme', envelope([{
       ...theme,
@@ -587,9 +616,27 @@ test('FRASER success payload validation rejects malformed 200 responses', async 
     false,
   );
   assert.equal(
+    validateFraserPayload('timeline', envelope([{ ...timeline, url: 'javascript:alert(1)' }])),
+    false,
+  );
+  assert.equal(
     validateFraserPayload('timeline/1/events', envelope([{
       ...event,
-      date: '2024-02-31',
+      date_start: '2024-02-31',
+    }])),
+    false,
+  );
+  assert.equal(
+    validateFraserPayload('timeline/1/events', envelope([{
+      ...event,
+      headline: undefined,
+    }])),
+    false,
+  );
+  assert.equal(
+    validateFraserPayload('timeline/1/events', envelope([{
+      ...event,
+      images: [{ filename: 5 }],
     }])),
     false,
   );
@@ -619,6 +666,47 @@ test('upstream date validation is UTC-safe at month, leap-day, and DST boundarie
   assert.equal(isValidUpstreamDate('2026-04-31'), false);
   assert.equal(isValidUpstreamDate('2026-03-08'), true);
   assert.equal(isValidUpstreamDate('2026-11-01'), true);
+});
+
+test('FRASER timeline events expose FRASER\'s flat headline, date, and link fields', () => {
+  const event = {
+    id: '8',
+    timeline_url: 'covid-19-pandemic',
+    headline: '\uFEFFFOMC lowers the federal funds rate',
+    description: '<p>The Committee cut rates by&nbsp;100&nbsp;basis points.</p>',
+    date_string: 'March 15, 2020',
+    date_start: '2020-03-15',
+    date_end: null,
+    links: 'FOMC statement@https://fraser.stlouisfed.org/title/677|WHO on Twitter@/docs/historical/who.jpg|javascript:alert(1)',
+    sortOrder: '8',
+    images: [],
+    av: [],
+  };
+
+  assert.equal(getEventTitle(event), 'FOMC lowers the federal funds rate');
+  assert.equal(getEventDate(event), '2020-03-15');
+  assert.equal(getEventDateLabel(event), 'March 15, 2020');
+  assert.equal(
+    getEventDateLabel({ ...event, date_string: null }),
+    'March 15, 2020',
+  );
+  assert.equal(
+    getEventDescription(event),
+    'The Committee cut rates by 100 basis points.',
+  );
+  assert.deepEqual(parseEventLinks(event), [
+    { label: 'FOMC statement', url: 'https://fraser.stlouisfed.org/title/677' },
+    { label: 'WHO on Twitter', url: 'https://fraser.stlouisfed.org/docs/historical/who.jpg' },
+  ]);
+  assert.deepEqual(parseEventLinks({ ...event, links: null }), []);
+});
+
+test('FRASER rich text is reduced to plain text rather than injected as markup', () => {
+  assert.equal(stripHtml('<script>alert(1)</script>Safe'), 'Safe');
+  assert.equal(stripHtml('<p>One</p><p>Two</p>'), 'One\nTwo');
+  assert.equal(stripHtml('AT&amp;T &#38; Co. &rsquo;90s'), 'AT&T & Co. \u201990s');
+  assert.equal(stripHtml(null), '');
+  assert.equal(stripHtml(undefined), '');
 });
 
 test('FRASER period labels preserve month, quarter, and DST boundary dates', () => {

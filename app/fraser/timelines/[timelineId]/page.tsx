@@ -7,20 +7,19 @@ import { useFraserTimeline, useTimelineEvents } from '@/hooks/useFraserQuery';
 import {
   getEventTitle,
   getEventDate,
+  getEventDateLabel,
   getEventDescription,
-  formatFraserDate,
-  extractUrl,
+  parseEventLinks,
+  stripHtml,
   type FraserTimelineEvent,
 } from '@/lib/fraser';
 import { QueryError } from '@/components/QueryError';
 
 function EventCard({ event, index }: { event: FraserTimelineEvent; index: number }) {
   const title = getEventTitle(event);
-  const date = getEventDate(event);
   const description = getEventDescription(event);
-  const fraserUrl = extractUrl(event.location);
-
-  const displayDate = date ? formatFraserDate(date) : null;
+  const links = parseEventLinks(event);
+  const displayDate = getEventDateLabel(event);
 
   return (
     <div className="flex gap-4">
@@ -53,21 +52,29 @@ function EventCard({ event, index }: { event: FraserTimelineEvent; index: number
           </div>
         )}
         <p className="text-sm font-semibold leading-snug" style={{ color: 'var(--text)' }}>
-          {fraserUrl !== '#' ? (
-            <a
-              href={fraserUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="hover:underline"
-            >
-              {title}
-            </a>
-          ) : title}
+          {title}
         </p>
         {description && (
-          <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+          <p className="text-xs leading-relaxed whitespace-pre-line" style={{ color: 'var(--text-muted)' }}>
             {description}
           </p>
+        )}
+        {links.length > 0 && (
+          <ul className="flex flex-col gap-1 mt-1">
+            {links.map((link) => (
+              <li key={link.url}>
+                <a
+                  href={link.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs hover:underline"
+                  style={{ color: 'var(--accent)' }}
+                >
+                  {link.label}
+                </a>
+              </li>
+            ))}
+          </ul>
         )}
       </div>
     </div>
@@ -83,15 +90,15 @@ export default function TimelinePage() {
   const timeline = timelineQuery.data?.records?.[0];
   const rawEvents = eventsQuery.data?.records ?? [];
 
-  // Sort chronologically by date
+  // Sort chronologically, falling back to FRASER's own ordering for same-day events
   const events = [...rawEvents].sort((a, b) => {
-    const da = getEventDate(a);
-    const db = getEventDate(b);
-    return da.localeCompare(db);
+    const byDate = getEventDate(a).localeCompare(getEventDate(b));
+    if (byDate !== 0) return byDate;
+    return Number(a.sortOrder ?? 0) - Number(b.sortOrder ?? 0);
   });
 
-  const title = timeline?.title ?? timelineId;
-  const blurb = timeline?.abstract || timeline?.description;
+  const title = stripHtml(timeline?.title) || timelineId;
+  const blurb = stripHtml(timeline?.abstract) || stripHtml(timeline?.description);
 
   return (
     <div className="flex flex-col gap-6">
@@ -165,9 +172,9 @@ export default function TimelinePage() {
         </div>
       ) : !eventsQuery.isError ? (
         <div className="flex flex-col">
-          {events.map((event, i) => (
-            <EventCard key={i} event={event} index={i} />
-          ))}
+            {events.map((event, i) => (
+              <EventCard key={String(event.id)} event={event} index={i} />
+            ))}
           {events.length === 0 && !eventsQuery.isLoading && (
             <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
               No events found for this timeline.
