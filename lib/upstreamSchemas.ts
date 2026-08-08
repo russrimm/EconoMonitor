@@ -152,6 +152,11 @@ function isOptionalString(value: unknown): boolean {
   return value === undefined || typeof value === 'string';
 }
 
+/** FRASER omits some fields and returns JSON `null` for others, so both mean "absent". */
+function isNullableString(value: unknown): boolean {
+  return value === undefined || value === null || typeof value === 'string';
+}
+
 function isFraserDate(value: unknown): value is string {
   if (typeof value !== 'string' || value.trim() === '') return false;
   if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return isIsoDate(value);
@@ -173,7 +178,7 @@ function isFraserRecordInfo(value: unknown): boolean {
     Array.isArray(value.recordIdentifier) &&
     value.recordIdentifier.length > 0 &&
     value.recordIdentifier.every(isStringOrNumber) &&
-    typeof value.recordType === 'string'
+    isNullableString(value.recordType)
   );
 }
 
@@ -207,6 +212,10 @@ function isFraserLocation(value: unknown): boolean {
   );
 }
 
+function isFraserDateEntry(value: unknown): boolean {
+  return isFraserDate(value) || (isRecord(value) && isFraserDate(value.$));
+}
+
 function isFraserOriginInfo(value: unknown): boolean {
   return (
     value === undefined ||
@@ -215,12 +224,9 @@ function isFraserOriginInfo(value: unknown): boolean {
       isOptionalString(value.frequency) &&
       (value.sortDate === undefined || isFraserDate(value.sortDate)) &&
       (value.dateIssued === undefined ||
+        isFraserDateEntry(value.dateIssued) ||
         (Array.isArray(value.dateIssued) &&
-          value.dateIssued.every(
-            (entry) =>
-              isFraserDate(entry) ||
-              (isRecord(entry) && isFraserDate(entry.$)),
-          ))))
+          value.dateIssued.every(isFraserDateEntry))))
   );
 }
 
@@ -284,37 +290,47 @@ function isFraserTimeline(value: unknown): boolean {
     typeof value.id === 'string' &&
     isHttpUrl(value.url) &&
     typeof value.title === 'string' &&
-    isOptionalString(value.description) &&
-    isOptionalString(value.abstract) &&
-    isOptionalString(value.created) &&
-    isOptionalString(value.modified)
+    isNullableString(value.description) &&
+    isNullableString(value.abstract) &&
+    isNullableString(value.created) &&
+    isNullableString(value.modified)
+  );
+}
+
+function isFraserTimelineImage(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    isNullableString(value.filename) &&
+    isNullableString(value.title) &&
+    isNullableString(value.caption) &&
+    isNullableString(value.source) &&
+    isNullableString(value.date)
   );
 }
 
 function isFraserTimelineEvent(value: unknown): boolean {
-  if (
-    !isRecord(value) ||
-    !isFraserLocation(value.location) ||
-    !isFraserOriginInfo(value.originInfo) ||
-    (value.titleInfo !== undefined && !isTitleInfo(value.titleInfo)) ||
-    (value.abstract !== undefined && !isStringArray(value.abstract)) ||
-    (value.note !== undefined && !isStringArray(value.note)) ||
-    (value.recordInfo !== undefined && !isFraserRecordInfo(value.recordInfo)) ||
-    !isOptionalString(value.title) ||
-    (value.date !== undefined && !isFraserDate(value.date)) ||
-    !isOptionalString(value.description)
-  ) {
-    return false;
-  }
-  const hasTitle =
-    typeof value.title === 'string' ||
-    value.titleInfo !== undefined;
-  const hasDate =
-    typeof value.date === 'string' ||
-    (isRecord(value.originInfo) &&
-      (typeof value.originInfo.sortDate === 'string' ||
-        Array.isArray(value.originInfo.dateIssued)));
-  return hasTitle && hasDate;
+  return (
+    isRecord(value) &&
+    isStringOrNumber(value.id) &&
+    typeof value.headline === 'string' &&
+    isFraserDate(value.date_start) &&
+    (value.date_end === undefined ||
+      value.date_end === null ||
+      isFraserDate(value.date_end)) &&
+    isNullableString(value.timeline_url) &&
+    isNullableString(value.description) &&
+    isNullableString(value.date_string) &&
+    isNullableString(value.links) &&
+    isNullableString(value.created) &&
+    isNullableString(value.modified) &&
+    (value.sortOrder === undefined ||
+      value.sortOrder === null ||
+      isStringOrNumber(value.sortOrder)) &&
+    (value.images === undefined ||
+      value.images === null ||
+      (Array.isArray(value.images) && value.images.every(isFraserTimelineImage))) &&
+    (value.av === undefined || value.av === null || Array.isArray(value.av))
+  );
 }
 
 function isFraserEnvelope(

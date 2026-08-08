@@ -8,6 +8,7 @@ import {
   extractTitle,
   extractId,
   extractAbstract,
+  stripHtml,
   type FraserTheme,
   type FraserTimeline,
 } from '@/lib/fraser';
@@ -70,7 +71,8 @@ function ThemeCard({ theme }: { theme: FraserTheme }) {
 }
 
 function TimelineCard({ timeline }: { timeline: FraserTimeline }) {
-  const blurb = timeline.abstract || timeline.description;
+  const title = stripHtml(timeline.title);
+  const blurb = stripHtml(timeline.abstract) || stripHtml(timeline.description);
   return (
     <Link
       href={`/fraser/timelines/${timeline.id}`}
@@ -80,7 +82,7 @@ function TimelineCard({ timeline }: { timeline: FraserTimeline }) {
       <div className="flex items-center gap-2">
         <Clock className="w-4 h-4 shrink-0" style={{ color: 'var(--blue)' }} />
         <span className="text-sm font-semibold" style={{ color: 'var(--text)' }}>
-          {timeline.title}
+          {title}
         </span>
       </div>
       {blurb && (
@@ -120,9 +122,9 @@ export default function FraserPage() {
     ? allTimelines.filter((tl) => {
         const q = timelineFilter.toLowerCase();
         return (
-          tl.title.toLowerCase().includes(q) ||
-          (tl.abstract ?? '').toLowerCase().includes(q) ||
-          (tl.description ?? '').toLowerCase().includes(q)
+          stripHtml(tl.title).toLowerCase().includes(q) ||
+          stripHtml(tl.abstract).toLowerCase().includes(q) ||
+          stripHtml(tl.description).toLowerCase().includes(q)
         );
       })
     : allTimelines;
