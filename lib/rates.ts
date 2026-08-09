@@ -66,6 +66,31 @@ export interface ReferenceRate {
   volumeInBillions: number | null;
   targetRateFrom: number | null;
   targetRateTo: number | null;
+  /**
+   * The New York Fed publishes the transaction-volume distribution behind each
+   * rate. The 1st–99th band shows how dispersed trading was, which a single
+   * headline rate hides.
+   */
+  percentile1: number | null;
+  percentile25: number | null;
+  percentile75: number | null;
+  percentile99: number | null;
+  /** `"R"` when the observation has been revised since first publication. */
+  revised: boolean;
+}
+
+export interface ReferenceRateHistoryPoint {
+  effectiveDate: string;
+  percent: number;
+  percentile1: number | null;
+  percentile99: number | null;
+  volumeInBillions: number | null;
+}
+
+export interface ReferenceRateHistory {
+  type: string;
+  label: string;
+  points: ReferenceRateHistoryPoint[];
 }
 
 export interface SofrAverages {
@@ -84,6 +109,7 @@ export interface RatesResponse {
     spreads: YieldSpread[];
   } | null;
   referenceRates: ReferenceRate[];
+  referenceRateHistory: ReferenceRateHistory[];
   sofrAverages: SofrAverages | null;
   updatedAt: string;
   providers: string[];
@@ -215,6 +241,11 @@ interface NewYorkFedRate {
   volumeInBillions?: unknown;
   targetRateFrom?: unknown;
   targetRateTo?: unknown;
+  percentPercentile1?: unknown;
+  percentPercentile25?: unknown;
+  percentPercentile75?: unknown;
+  percentPercentile99?: unknown;
+  revisionIndicator?: unknown;
   average30day?: unknown;
   average90day?: unknown;
   average180day?: unknown;
@@ -223,6 +254,39 @@ interface NewYorkFedRate {
 
 function optionalNumber(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+/** The feed carries `""` for unrevised rows and `"R"` once a value is restated. */
+function isRevised(value: unknown): boolean {
+  return typeof value === 'string' && value.trim().toUpperCase() === 'R';
+}
+
+function toReferenceRate(rate: NewYorkFedRate): ReferenceRate | null {
+  if (typeof rate.type !== 'string' || typeof rate.effectiveDate !== 'string') {
+    return null;
+  }
+
+  const label = REFERENCE_RATE_LABELS[rate.type];
+  const percent = optionalNumber(rate.percentRate);
+  const effectiveDate = parseTreasuryDate(rate.effectiveDate);
+  // SOFRAI carries compounded averages instead of a rate, so it is read by
+  // parseSofrAverages rather than skipped silently here.
+  if (!label || percent === null || !effectiveDate) return null;
+
+  return {
+    type: rate.type,
+    label,
+    effectiveDate,
+    percent,
+    volumeInBillions: optionalNumber(rate.volumeInBillions),
+    targetRateFrom: optionalNumber(rate.targetRateFrom),
+    targetRateTo: optionalNumber(rate.targetRateTo),
+    percentile1: optionalNumber(rate.percentPercentile1),
+    percentile25: optionalNumber(rate.percentPercentile25),
+    percentile75: optionalNumber(rate.percentPercentile75),
+    percentile99: optionalNumber(rate.percentPercentile99),
+    revised: isRevised(rate.revisionIndicator),
+  };
 }
 
 export function parseReferenceRates(payload: unknown): ReferenceRate[] {
@@ -237,27 +301,8 @@ export function parseReferenceRates(payload: unknown): ReferenceRate[] {
   const rates: ReferenceRate[] = [];
   for (const entry of (payload as { refRates: unknown[] }).refRates) {
     if (typeof entry !== 'object' || entry === null) continue;
-    const rate = entry as NewYorkFedRate;
-    if (typeof rate.type !== 'string' || typeof rate.effectiveDate !== 'string') {
-      continue;
-    }
-
-    const label = REFERENCE_RATE_LABELS[rate.type];
-    const percent = optionalNumber(rate.percentRate);
-    const effectiveDate = parseTreasuryDate(rate.effectiveDate);
-    // SOFRAI carries compounded averages instead of a rate, so it is read by
-    // parseSofrAverages rather than skipped silently here.
-    if (!label || percent === null || !effectiveDate) continue;
-
-    rates.push({
-      type: rate.type,
-      label,
-      effectiveDate,
-      percent,
-      volumeInBillions: optionalNumber(rate.volumeInBillions),
-      targetRateFrom: optionalNumber(rate.targetRateFrom),
-      targetRateTo: optionalNumber(rate.targetRateTo),
-    });
+    const rate = toReferenceRate(entry as NewYorkFedRate);
+    if (rate) rates.push(rate);
   }
 
   return rates.sort(
@@ -265,6 +310,54 @@ export function parseReferenceRates(payload: unknown): ReferenceRate[] {
       REFERENCE_RATE_ORDER.indexOf(left.type) -
       REFERENCE_RATE_ORDER.indexOf(right.type),
   );
+}
+
+/**
+ * Reshapes a multi-rate `search.json` window into one ascending series per rate
+ * type. The feed returns newest first and interleaves every rate type, so rows
+ * are bucketed by type and re-sorted rather than trusted in arrival order.
+ */
+export function parseReferenceRateHistory(
+  payload: unknown,
+): ReferenceRateHistory[] {
+  if (
+    typeof payload !== 'object' ||
+    payload === null ||
+    !Array.isArray((payload as { refRates?: unknown }).refRates)
+  ) {
+    throw new Error('upstream response did not contain reference rates');
+  }
+
+  const byType = new Map<string, ReferenceRateHistoryPoint[]>();
+  for (const entry of (payload as { refRates: unknown[] }).refRates) {
+    if (typeof entry !== 'object' || entry === null) continue;
+    const rate = toReferenceRate(entry as NewYorkFedRate);
+    if (!rate) continue;
+
+    const points = byType.get(rate.type) ?? [];
+    points.push({
+      effectiveDate: rate.effectiveDate,
+      percent: rate.percent,
+      percentile1: rate.percentile1,
+      percentile99: rate.percentile99,
+      volumeInBillions: rate.volumeInBillions,
+    });
+    byType.set(rate.type, points);
+  }
+
+  return [...byType]
+    .map(([type, points]) => ({
+      type,
+      label: REFERENCE_RATE_LABELS[type] ?? type,
+      points: points.sort((left, right) =>
+        left.effectiveDate.localeCompare(right.effectiveDate),
+      ),
+    }))
+    .sort(
+      (left, right) =>
+        REFERENCE_RATE_ORDER.indexOf(left.type) -
+        REFERENCE_RATE_ORDER.indexOf(right.type),
+    );
 }
 
 export function parseSofrAverages(payload: unknown): SofrAverages | null {
@@ -359,6 +452,21 @@ export function isRatesResponse(value: unknown): value is RatesResponse {
         typeof rate.effectiveDate === 'string' &&
         typeof rate.percent === 'number',
     ) &&
+    Array.isArray(candidate.referenceRateHistory) &&
+    candidate.referenceRateHistory.every(
+      (series) =>
+        typeof series === 'object' &&
+        series !== null &&
+        typeof series.type === 'string' &&
+        Array.isArray(series.points) &&
+        series.points.every(
+          (point) =>
+            typeof point === 'object' &&
+            point !== null &&
+            typeof point.effectiveDate === 'string' &&
+            typeof point.percent === 'number',
+        ),
+    ) &&
     typeof candidate.updatedAt === 'string' &&
     Number.isFinite(Date.parse(candidate.updatedAt)) &&
     Array.isArray(candidate.providers) &&
@@ -371,7 +479,7 @@ export async function getRates(signal?: AbortSignal): Promise<RatesResponse> {
   const response = await fetch('/api/rates', {
     signal: withDeadline(signal, 20_000),
   });
-  const data = await readBoundedResponseJson(response, 512 * 1024).catch(
+  const data = await readBoundedResponseJson(response, 2 * 1024 * 1024).catch(
     () => null,
   );
 

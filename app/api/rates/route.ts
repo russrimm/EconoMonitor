@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
   calculateSpreads,
+  parseReferenceRateHistory,
   parseReferenceRates,
   parseSofrAverages,
   parseYieldCurveXml,
   treasuryMonthParameter,
   type RatesResponse,
   type ReferenceRate,
+  type ReferenceRateHistory,
   type SofrAverages,
   type YieldCurveSnapshot,
 } from '@/lib/rates';
@@ -22,9 +24,14 @@ const TREASURY_YIELD_CURVE_XML =
   'https://home.treasury.gov/resource-center/data-chart-center/interest-rates/pages/xml';
 const NEW_YORK_FED_RATES =
   'https://markets.newyorkfed.org/api/rates/all/latest.json';
+const NEW_YORK_FED_RATE_SEARCH =
+  'https://markets.newyorkfed.org/api/rates/all/search.json';
 const CACHE_SECONDS = 30 * 60;
 const MAX_TREASURY_BYTES = 2 * 1024 * 1024;
 const MAX_NEW_YORK_FED_BYTES = 256 * 1024;
+const MAX_NEW_YORK_FED_HISTORY_BYTES = 1024 * 1024;
+/** Long enough to show a policy cycle without pulling a multi-megabyte window. */
+const RATE_HISTORY_DAYS = 180;
 
 /**
  * Both publishers reject some default runtime agents, and identifying the
@@ -149,10 +156,59 @@ async function fetchReferenceRates(signal: AbortSignal): Promise<{
   }
 }
 
+/**
+ * Reference-rate history for every rate type in one call. `search.json` accepts
+ * a date window and returns all types interleaved, which is far cheaper than
+ * one `last/{n}.json` request per rate.
+ *
+ * Both dates come from the server clock, so no caller input reaches the
+ * upstream URL.
+ */
+async function fetchReferenceRateHistory(
+  signal: AbortSignal,
+): Promise<ReferenceRateHistory[]> {
+  const now = new Date();
+  const start = new Date(now.getTime() - RATE_HISTORY_DAYS * 86_400_000);
+  const isoDate = (date: Date): string => date.toISOString().slice(0, 10);
+
+  const url = new URL(NEW_YORK_FED_RATE_SEARCH);
+  url.searchParams.set('startDate', isoDate(start));
+  url.searchParams.set('endDate', isoDate(now));
+
+  const upstream = await fetchUpstream(url, {
+    headers: { Accept: 'application/json', 'User-Agent': USER_AGENT },
+    cache: 'no-store',
+    signal,
+  }, {
+    service: 'new_york_fed',
+    operation: 'reference-rates/history',
+    timeoutMs: 15_000,
+    cachePolicy: 'no-store',
+  });
+
+  if (!upstream.ok) {
+    throw new Error(`upstream returned ${upstream.status}`);
+  }
+
+  const data = await readLimitedJson(upstream, MAX_NEW_YORK_FED_HISTORY_BYTES);
+  try {
+    const history = parseReferenceRateHistory(data);
+    if (history.length === 0) {
+      throw new Error('upstream returned no reference rate history');
+    }
+    logUpstreamSuccess(upstream);
+    return history;
+  } catch (error) {
+    logInvalidPayload(upstream);
+    throw error;
+  }
+}
+
 export async function GET(request: NextRequest) {
-  const [curveResult, ratesResult] = await Promise.allSettled([
+  const [curveResult, ratesResult, historyResult] = await Promise.allSettled([
     fetchYieldCurve(request.signal),
     fetchReferenceRates(request.signal),
+    fetchReferenceRateHistory(request.signal),
   ]);
 
   if (curveResult.status === 'rejected' && ratesResult.status === 'rejected') {
@@ -174,15 +230,21 @@ export async function GET(request: NextRequest) {
     curve,
     referenceRates:
       ratesResult.status === 'fulfilled' ? ratesResult.value.rates : [],
+    referenceRateHistory:
+      historyResult.status === 'fulfilled' ? historyResult.value : [],
     sofrAverages:
       ratesResult.status === 'fulfilled' ? ratesResult.value.sofrAverages : null,
     updatedAt: new Date().toISOString(),
     providers: [
       ...(curveResult.status === 'fulfilled' ? ['U.S. Treasury'] : []),
-      ...(ratesResult.status === 'fulfilled' ? ['New York Fed'] : []),
+      ...(ratesResult.status === 'fulfilled' || historyResult.status === 'fulfilled'
+        ? ['New York Fed']
+        : []),
     ],
     partial:
-      curveResult.status === 'rejected' || ratesResult.status === 'rejected',
+      curveResult.status === 'rejected' ||
+      ratesResult.status === 'rejected' ||
+      historyResult.status === 'rejected',
   };
 
   return NextResponse.json(response, {

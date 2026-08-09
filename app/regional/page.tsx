@@ -3,7 +3,12 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Map as MapIcon, RefreshCw } from 'lucide-react';
-import { getRegionalData, type StateGdp } from '@/lib/regional';
+import {
+  getRegionalData,
+  type CensusFrequency,
+  type CensusIndicator,
+  type StateGdp,
+} from '@/lib/regional';
 import { QueryError } from '@/components/QueryError';
 
 type SortKey = 'name' | 'changeOnQuarter' | 'changeOnYear';
@@ -14,6 +19,14 @@ function formatMonth(date: string): string {
     year: 'numeric',
     timeZone: 'UTC',
   });
+}
+
+/** Quarterly Census series are stamped on the first month of their quarter. */
+function formatPeriod(date: string, frequency: CensusFrequency): string {
+  if (frequency !== 'quarterly') return formatMonth(date);
+  const parsed = new Date(`${date}T00:00:00Z`);
+  const quarter = Math.floor(parsed.getUTCMonth() / 3) + 1;
+  return `Q${quarter} ${parsed.getUTCFullYear()}`;
 }
 
 function ChangeCell({ value }: { value: number | null }) {
@@ -87,6 +100,18 @@ export default function RegionalPage() {
     });
   }, [data?.stateGdp?.states, sortKey]);
 
+  // The Census set spans four themes, so cards are grouped rather than listed
+  // flat. Group order follows the order indicators arrive in.
+  const indicatorGroups = useMemo((): [string, CensusIndicator[]][] => {
+    const groups = new Map<string, CensusIndicator[]>();
+    for (const indicator of data?.indicators ?? []) {
+      const existing = groups.get(indicator.group);
+      if (existing) existing.push(indicator);
+      else groups.set(indicator.group, [indicator]);
+    }
+    return [...groups];
+  }, [data?.indicators]);
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-start justify-between gap-4 flex-wrap">
@@ -98,8 +123,9 @@ export default function RegionalPage() {
             </h1>
           </div>
           <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
-            State-level GDP from the Bureau of Economic Analysis, with headline
-            retail and housing indicators from the Census Bureau.
+            State-level GDP from the Bureau of Economic Analysis, with the full
+            set of Census Bureau economic indicator time series covering trade,
+            manufacturing, housing, construction and government finance.
           </p>
         </div>
 
@@ -157,62 +183,67 @@ export default function RegionalPage() {
         />
       )}
 
-      {data && data.indicators.length > 0 && (
-        <section aria-label="Census indicators">
-          <h2 className="font-semibold mb-3" style={{ color: 'var(--text)' }}>
-            Retail and housing
-          </h2>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {data.indicators.map((indicator) => (
-              <article
-                key={indicator.id}
-                className="rounded-xl p-4"
-                style={{
-                  background: 'var(--surface)',
-                  border: '1px solid var(--border)',
-                }}
-              >
-                <h3
-                  className="text-sm font-medium"
-                  style={{ color: 'var(--text-muted)' }}
-                >
-                  {indicator.label}
-                </h3>
-                <p
-                  className="text-2xl font-bold mt-1"
-                  style={{ color: 'var(--text)' }}
-                >
-                  {indicator.latest.value.toLocaleString('en-US')}
-                  <span
-                    className="text-sm font-normal ml-1"
-                    style={{ color: 'var(--text-muted)' }}
+      {data && indicatorGroups.length > 0 && (
+        <section aria-label="Census economic indicators" className="flex flex-col gap-6">
+          {indicatorGroups.map(([group, indicators]) => (
+            <div key={group}>
+              <h2 className="font-semibold mb-3" style={{ color: 'var(--text)' }}>
+                {group}
+              </h2>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {indicators.map((indicator) => (
+                  <article
+                    key={indicator.id}
+                    className="rounded-xl p-4"
+                    style={{
+                      background: 'var(--surface)',
+                      border: '1px solid var(--border)',
+                    }}
                   >
-                    {indicator.unit}
-                  </span>
-                </p>
-                <div
-                  className="flex items-center gap-3 mt-2 text-xs"
-                  style={{ color: 'var(--text-muted)' }}
-                >
-                  <span>
-                    1m <ChangeCell value={indicator.changeOnMonth} />
-                  </span>
-                  <span>
-                    1y <ChangeCell value={indicator.changeOnYear} />
-                  </span>
-                  <time dateTime={indicator.latest.date} className="ml-auto">
-                    {formatMonth(indicator.latest.date)}
-                  </time>
-                </div>
-                <p
-                  className="text-xs mt-2"
-                  style={{ color: 'var(--text-muted)' }}
-                >
-                  {indicator.note}
-                </p>
-              </article>
-            ))}
-          </div>
+                    <h3
+                      className="text-sm font-medium"
+                      style={{ color: 'var(--text-muted)' }}
+                    >
+                      {indicator.label}
+                    </h3>
+                    <p
+                      className="text-2xl font-bold mt-1"
+                      style={{ color: 'var(--text)' }}
+                    >
+                      {indicator.latest.value.toLocaleString('en-US')}
+                      <span
+                        className="text-sm font-normal ml-1"
+                        style={{ color: 'var(--text-muted)' }}
+                      >
+                        {indicator.unit}
+                      </span>
+                    </p>
+                    <div
+                      className="flex items-center gap-3 mt-2 text-xs"
+                      style={{ color: 'var(--text-muted)' }}
+                    >
+                      <span>
+                        {indicator.frequency === 'quarterly' ? '1q' : '1m'}{' '}
+                        <ChangeCell value={indicator.changeOnMonth} />
+                      </span>
+                      <span>
+                        1y <ChangeCell value={indicator.changeOnYear} />
+                      </span>
+                      <time dateTime={indicator.latest.date} className="ml-auto">
+                        {formatPeriod(indicator.latest.date, indicator.frequency)}
+                      </time>
+                    </div>
+                    <p
+                      className="text-xs mt-2"
+                      style={{ color: 'var(--text-muted)' }}
+                    >
+                      {indicator.note}
+                    </p>
+                  </article>
+                ))}
+              </div>
+            </div>
+          ))}
         </section>
       )}
 

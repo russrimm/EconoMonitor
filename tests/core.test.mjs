@@ -44,12 +44,20 @@ import {
 } from '../lib/news.ts';
 import {
   calculateSpreads,
+  parseReferenceRateHistory,
   parseReferenceRates,
   parseSofrAverages,
   parseTreasuryDate,
   parseYieldCurveXml,
   treasuryMonthParameter,
 } from '../lib/rates.ts';
+import {
+  parseCurrentSeriesBreak,
+  parsePrimaryDealers,
+  parseRepoOperations,
+  parseSomaSummary,
+  PRIMARY_DEALER_SERIES,
+} from '../lib/markets.ts';
 import {
   findComparison,
   groupEiaRows,
@@ -911,6 +919,218 @@ test('New York Fed reference rates keep display order and separate SOFR averages
   assert.throws(() => parseReferenceRates({}), /reference rates/);
 });
 
+test('New York Fed reference rates carry percentiles and revision flags', () => {
+  const [rate] = parseReferenceRates({
+    refRates: [
+      {
+        effectiveDate: '2026-08-06',
+        type: 'EFFR',
+        percentRate: 3.63,
+        percentPercentile1: 3.3,
+        percentPercentile25: 3.58,
+        percentPercentile75: 3.65,
+        percentPercentile99: 3.9,
+        revisionIndicator: 'R',
+      },
+    ],
+  });
+
+  assert.equal(rate.percentile1, 3.3);
+  assert.equal(rate.percentile25, 3.58);
+  assert.equal(rate.percentile75, 3.65);
+  assert.equal(rate.percentile99, 3.9);
+  assert.equal(rate.revised, true);
+
+  // Unrevised rows carry an empty string, and older rows omit percentiles.
+  const [plain] = parseReferenceRates({
+    refRates: [
+      {
+        effectiveDate: '2026-08-06',
+        type: 'EFFR',
+        percentRate: 3.63,
+        revisionIndicator: '',
+      },
+    ],
+  });
+  assert.equal(plain.revised, false);
+  assert.equal(plain.percentile1, null);
+});
+
+test('Reference rate history buckets an interleaved window into ascending series', () => {
+  // search.json returns every rate type in one newest-first list, so the parser
+  // has to split by type and re-sort rather than trust arrival order.
+  const series = parseReferenceRateHistory({
+    refRates: [
+      { effectiveDate: '2026-08-06', type: 'SOFR', percentRate: 3.65 },
+      { effectiveDate: '2026-08-06', type: 'EFFR', percentRate: 3.63 },
+      { effectiveDate: '2026-08-06', type: 'SOFRAI', average30day: 3.6 },
+      { effectiveDate: '2026-08-05', type: 'SOFR', percentRate: 3.66 },
+      {
+        effectiveDate: '2026-08-05',
+        type: 'EFFR',
+        percentRate: 3.62,
+        percentPercentile1: 3.3,
+        percentPercentile99: 3.9,
+        volumeInBillions: 95,
+      },
+      { effectiveDate: 'not-a-date', type: 'EFFR', percentRate: 9 },
+    ],
+  });
+
+  // SOFRAI has no percentRate and is excluded; EFFR leads the display order.
+  assert.deepEqual(series.map((entry) => entry.type), ['EFFR', 'SOFR']);
+  assert.equal(series[0].label, 'Effective Federal Funds Rate');
+  assert.deepEqual(
+    series[0].points.map((point) => point.effectiveDate),
+    ['2026-08-05', '2026-08-06'],
+  );
+  assert.equal(series[0].points[0].percentile1, 3.3);
+  assert.equal(series[0].points[0].volumeInBillions, 95);
+  assert.equal(series[0].points[1].percentile99, null);
+  assert.throws(() => parseReferenceRateHistory({}), /reference rates/);
+});
+
+test('SOMA holdings parse string dollar amounts and compare to the prior year', () => {
+  const summary = parseSomaSummary(
+    {
+      soma: {
+        summary: [
+          // The feed reports every amount as a string and leaves classes the
+          // desk did not hold as an empty string rather than "0".
+          {
+            asOfDate: '2024-08-07',
+            total: '7000000000000',
+            bills: '200000000000',
+            cmbs: '',
+          },
+          { asOfDate: '2026-08-05', total: '6100000000000', bills: '195000000000' },
+          { asOfDate: '2025-08-06', total: '6600000000000', bills: '190000000000' },
+          { asOfDate: '2026-08-12', total: '6000000000000', bills: '180000000000' },
+          { asOfDate: '2026-08-19', total: 'n/a' },
+        ],
+      },
+    },
+    2,
+  );
+
+  assert.equal(summary.latest.asOfDate, '2026-08-12');
+  assert.equal(summary.latest.total, 6_000_000_000_000);
+  assert.equal(summary.latest.cmbs, null);
+  // Weekly snapshots never land on the exact anniversary, so the comparison is
+  // the last snapshot on or before it.
+  assert.equal(summary.yearAgo.asOfDate, '2025-08-06');
+  assert.deepEqual(
+    summary.history.map((holding) => holding.asOfDate),
+    ['2026-08-05', '2026-08-12'],
+  );
+  assert.throws(() => parseSomaSummary({}, 2), /SOMA summary/);
+  assert.throws(
+    () => parseSomaSummary({ soma: { summary: [] } }, 2),
+    /no usable rows/,
+  );
+});
+
+test('Repo operations surface newest first with per-security detail', () => {
+  const operations = parseRepoOperations(
+    {
+      repo: {
+        operations: [
+          {
+            operationId: 'older',
+            operationDate: '2026-08-05',
+            operationType: 'Repo',
+            totalAmtAccepted: 1000,
+            details: [],
+          },
+          {
+            operationId: 'newest',
+            operationDate: '2026-08-07',
+            operationType: 'Reverse Repo',
+            operationMethod: 'Fixed Rate',
+            term: 'Overnight',
+            maturityDate: '2026-08-10',
+            totalAmtSubmitted: 250_000_000_000,
+            totalAmtAccepted: 250_000_000_000,
+            acceptedCpty: 42,
+            details: [
+              {
+                securityType: 'Treasury',
+                amtSubmitted: 250_000_000_000,
+                amtAccepted: 250_000_000_000,
+                percentAwardRate: 3.5,
+              },
+              { amtAccepted: 1 },
+            ],
+          },
+          { operationId: 'undated', operationDate: 'nope' },
+        ],
+      },
+    },
+    2,
+  );
+
+  assert.deepEqual(operations.map((op) => op.operationId), ['newest', 'older']);
+  assert.equal(operations[0].acceptedCounterparties, 42);
+  assert.equal(operations[0].maturityDate, '2026-08-10');
+  // A detail row without a security type cannot be labelled, so it is dropped.
+  assert.equal(operations[0].details.length, 1);
+  assert.equal(operations[0].details[0].percentAwardRate, 3.5);
+  assert.equal(operations[0].details[0].percentOfferingRate, null);
+  assert.equal(operations[1].operationMethod, '');
+  assert.throws(() => parseRepoOperations({}, 2), /repo operations/);
+});
+
+test('Primary dealer statistics keep the curated series and drop withheld values', () => {
+  const stats = parsePrimaryDealers({
+    pd: {
+      timeseries: [
+        { keyid: 'PDPOSGST-TOT', asofdate: '2026-07-29', value: '100000' },
+        { keyid: 'PDPOSGST-TOT', asofdate: '2026-08-05', value: '120000' },
+        // The release repeats older weeks; the newest date has to win no
+        // matter where it appears in the list.
+        { keyid: 'PDPOSGST-TOT', asofdate: '2026-07-22', value: '90000' },
+        // "*" marks a confidential value and must not become zero.
+        { keyid: 'PDPOSGS-B', asofdate: '2026-08-05', value: '*' },
+        { keyid: 'PDNOTCURATED', asofdate: '2026-08-05', value: '5' },
+      ],
+    },
+  });
+
+  assert.deepEqual(stats.map((stat) => stat.keyId), ['PDPOSGST-TOT']);
+  assert.equal(stats[0].asOfDate, '2026-08-05');
+  assert.equal(stats[0].value, 120000);
+  assert.equal(stats[0].label, PRIMARY_DEALER_SERIES[0].label);
+  assert.throws(() => parsePrimaryDealers({}), /primary dealer/);
+});
+
+test('Primary dealer series break resolves to the window covering today', () => {
+  const breaks = {
+    pd: {
+      seriesbreaks: [
+        { seriesbreak: 'SBN2013', startdate: '2013-04-03', enddate: '2015-01-28' },
+        { seriesbreak: 'SBN2022', startdate: '2022-02-02', enddate: '2024-06-26' },
+        { seriesbreak: 'SBN2024', startdate: '2024-07-03', enddate: '9999-12-31' },
+      ],
+    },
+  };
+
+  assert.equal(parseCurrentSeriesBreak(breaks), 'SBN2024');
+  // If every break has closed, the newest one is still the right series to ask
+  // for rather than failing outright.
+  assert.equal(
+    parseCurrentSeriesBreak({
+      pd: {
+        seriesbreaks: [
+          { seriesbreak: 'SBN2013', startdate: '2013-04-03', enddate: '2015-01-28' },
+          { seriesbreak: 'SBN2022', startdate: '2022-02-02', enddate: '2024-06-26' },
+        ],
+      },
+    }),
+    'SBN2022',
+  );
+  assert.equal(parseCurrentSeriesBreak({}), null);
+});
+
 test('EIA rows group by series into ascending observations', () => {
   const grouped = groupEiaRows({
     response: {
@@ -1052,16 +1272,87 @@ test('Census keeps only national rows when a geography column is present', () =>
 
 test('Census indicator codes match the live EITS vocabulary', () => {
   // These pairs are easy to invert; the API answers an invalid pair with an
-  // empty result set rather than an error, so they are pinned here.
+  // empty result set rather than an error, so they are pinned here. Codes come
+  // from each program's published data dictionary.
   const byId = Object.fromEntries(
     CENSUS_INDICATORS.map((indicator) => [indicator.id, indicator]),
   );
-  assert.equal(byId['retail-sales'].categoryCode, '44X72');
-  assert.equal(byId['retail-sales'].dataTypeCode, 'SM');
-  assert.equal(byId['housing-starts'].categoryCode, 'ASTARTS');
-  assert.equal(byId['housing-starts'].dataTypeCode, 'TOTAL');
-  assert.equal(byId['new-home-sales'].categoryCode, 'ASOLD');
-  assert.equal(byId['new-home-sales'].dataTypeCode, 'TOTAL');
+  const expected = {
+    'retail-sales': ['marts', '44X72', 'SM', 'yes', 'monthly'],
+    'retail-sales-final': ['mrts', '44X72', 'SM', 'yes', 'monthly'],
+    'retail-inventories': ['mrtsadv', '44000', 'IM', 'yes', 'monthly'],
+    'wholesale-sales': ['mwts', '42', 'SM', 'yes', 'monthly'],
+    'wholesale-inventories': ['mwtsadv', '42', 'IM', 'yes', 'monthly'],
+    'inventories-to-sales': ['mtis', 'TOTBUS', 'IR', 'yes', 'monthly'],
+    'durable-goods-orders': ['advm3', 'MDM', 'NO', 'yes', 'monthly'],
+    'factory-orders': ['m3', 'MTM', 'NO', 'yes', 'monthly'],
+    'business-applications': ['bfs', 'TOTAL', 'BA_BA', 'yes', 'monthly'],
+    'corporate-sales': ['qfr', 'MFG', '101', 'no', 'quarterly'],
+    'services-revenue': ['qss', '000000A', 'QREV', 'yes', 'quarterly'],
+    'housing-starts': ['resconst', 'ASTARTS', 'TOTAL', 'yes', 'monthly'],
+    'building-permits': ['resconst', 'APERMITS', 'TOTAL', 'yes', 'monthly'],
+    'new-home-sales': ['ressales', 'ASOLD', 'TOTAL', 'yes', 'monthly'],
+    // `vip` publishes the seasonally adjusted annual rate under its own
+    // category code rather than through the seasonally_adj predicate.
+    'construction-spending': ['vip', 'AXXXX', 'T', 'yes', 'monthly'],
+    // `hv` likewise separates adjusted (SAHOR) from unadjusted (HOR).
+    'homeownership-rate': ['hv', 'RATE', 'SAHOR', 'yes', 'quarterly'],
+    'manufactured-home-shipments': ['mhs2', 'T', 'SH', 'no', 'monthly'],
+    'manufactured-home-shipments-legacy': ['mhs', 'T', 'SH', 'no', 'monthly'],
+    'trade-balance': ['ftd', 'BOPGS', 'BAL', 'yes', 'monthly'],
+    'trade-balance-advance': ['ftdadv', 'CBG', 'BAL', 'yes', 'monthly'],
+    'state-local-tax-revenue': ['qtax', 'QTAXCAT1', 'TOTAL', 'yes', 'quarterly'],
+    'public-pension-holdings': ['qpr', 'TOTHOLDINGS', 'HLDTOT', 'no', 'quarterly'],
+  };
+
+  assert.equal(CENSUS_INDICATORS.length, Object.keys(expected).length);
+  for (const [id, [dataset, category, dataType, adj, frequency]] of Object.entries(
+    expected,
+  )) {
+    assert.equal(byId[id].dataset, dataset, `${id} dataset`);
+    assert.equal(byId[id].categoryCode, category, `${id} category`);
+    assert.equal(byId[id].dataTypeCode, dataType, `${id} data type`);
+    assert.equal(byId[id].seasonallyAdj, adj, `${id} seasonal adjustment`);
+    assert.equal(byId[id].frequency, frequency, `${id} frequency`);
+  }
+
+  // Every EITS dataset is covered exactly once except resconst, which supplies
+  // both starts and permits.
+  assert.equal(new Set(CENSUS_INDICATORS.map((i) => i.dataset)).size, 21);
+
+  // qtax is the only dataset whose variables are published in upper case.
+  assert.deepEqual(
+    CENSUS_INDICATORS.filter((i) => i.uppercaseVariables).map((i) => i.dataset),
+    ['qtax'],
+  );
+});
+
+test('Census periods parse monthly and quarterly stamps to the same key space', () => {
+  assert.equal(parseCensusPeriod('2026-06'), '2026-06-01');
+  // hv, qfr, qss, qtax and qpr are quarterly; each quarter maps to its first
+  // month so one date-keyed lookup serves both frequencies.
+  assert.equal(parseCensusPeriod('2026-Q1'), '2026-01-01');
+  assert.equal(parseCensusPeriod('2026-Q2'), '2026-04-01');
+  assert.equal(parseCensusPeriod('2026-Q4'), '2026-10-01');
+  assert.equal(parseCensusPeriod('2026-Q5'), null);
+  assert.equal(parseCensusPeriod('2026-Q0'), null);
+  assert.equal(parseCensusPeriod('2026'), null);
+});
+
+test('Census timeseries matches upper-case headers used by the qtax dataset', () => {
+  // qtax publishes CELL_VALUE and GEO_LEVEL_CODE while every other EITS
+  // dataset uses lower case, and the API echoes whichever case was requested.
+  const observations = parseCensusTimeseries([
+    ['CELL_VALUE', 'GEO_LEVEL_CODE', 'TIME_SLOT_ID', 'time'],
+    ['540915', 'US', '0', '2026-Q1'],
+    ['12345', 'STATE', '0', '2026-Q1'],
+    ['528000', 'US', '0', '2025-Q4'],
+  ]);
+
+  assert.deepEqual(observations, [
+    { date: '2025-10-01', value: 528000 },
+    { date: '2026-01-01', value: 540915 },
+  ]);
 });
 
 test('Census indicators compare against the same calendar month, not row offsets', () => {
@@ -1070,6 +1361,9 @@ test('Census indicators compare against the same calendar month, not row offsets
     dataset: 'marts',
     categoryCode: '44X72',
     dataTypeCode: 'SM',
+    seasonallyAdj: 'yes',
+    frequency: 'monthly',
+    group: 'Retail and wholesale trade',
     label: 'Advance retail and food services sales',
     unit: '$M',
     note: '',
@@ -1087,3 +1381,30 @@ test('Census indicators compare against the same calendar month, not row offsets
   assert.equal(Number(indicator.changeOnYear.toFixed(0)), 20);
   assert.equal(buildCensusIndicator(definition, []), null);
 });
+
+test('Quarterly Census indicators step back a quarter, not a month', () => {
+  const definition = {
+    id: 'homeownership-rate',
+    dataset: 'hv',
+    categoryCode: 'RATE',
+    dataTypeCode: 'SAHOR',
+    seasonallyAdj: 'yes',
+    frequency: 'quarterly',
+    group: 'Housing and construction',
+    label: 'Homeownership rate',
+    unit: '%',
+    note: '',
+  };
+  // Quarterly observations sit three months apart, so a one-month lookback
+  // would always miss and report no change at all.
+  const indicator = buildCensusIndicator(definition, [
+    { date: '2025-04-01', value: 60 },
+    { date: '2026-01-01', value: 64 },
+    { date: '2026-04-01', value: 66 },
+  ]);
+
+  assert.equal(indicator.frequency, 'quarterly');
+  assert.equal(Number(indicator.changeOnMonth.toFixed(2)), 3.13);
+  assert.equal(Number(indicator.changeOnYear.toFixed(0)), 10);
+});
+
