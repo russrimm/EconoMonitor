@@ -129,6 +129,31 @@ async function mockPublicApis(page: Page) {
           volumeInBillions: 3055,
           targetRateFrom: null,
           targetRateTo: null,
+          percentile1: 3.61,
+          percentile25: 3.63,
+          percentile75: 3.68,
+          percentile99: 3.73,
+          revised: false,
+        }],
+        referenceRateHistory: [{
+          type: 'SOFR',
+          label: 'Secured Overnight Financing Rate',
+          points: [
+            {
+              effectiveDate: '2026-08-05',
+              percent: 3.66,
+              percentile1: 3.62,
+              percentile99: 3.74,
+              volumeInBillions: 3020,
+            },
+            {
+              effectiveDate: '2026-08-06',
+              percent: 3.65,
+              percentile1: 3.61,
+              percentile99: 3.73,
+              volumeInBillions: 3055,
+            },
+          ],
         }],
         sofrAverages: null,
         updatedAt: '2026-08-07T12:00:00.000Z',
@@ -183,15 +208,95 @@ async function mockPublicApis(page: Page) {
           label: 'Advance retail and food services sales',
           unit: '$M',
           note: 'Seasonally adjusted.',
+          group: 'Retail and wholesale trade',
+          frequency: 'monthly',
           latest: { date: '2026-06-01', value: 720000 },
           changeOnMonth: 0.4,
           changeOnYear: 3.1,
           observations: [{ date: '2026-06-01', value: 720000 }],
+        }, {
+          id: 'homeownership-rate',
+          label: 'Homeownership rate',
+          unit: '%',
+          note: 'Seasonally adjusted.',
+          group: 'Housing and construction',
+          frequency: 'quarterly',
+          latest: { date: '2026-04-01', value: 65.2 },
+          changeOnMonth: 0.2,
+          changeOnYear: 0.5,
+          observations: [{ date: '2026-04-01', value: 65.2 }],
         }],
         updatedAt: '2026-08-07T12:00:00.000Z',
         partial: false,
         beaConfigured: true,
         censusConfigured: true,
+      }),
+    });
+  });
+
+  await page.route('**/api/markets', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        soma: {
+          latest: {
+            asOfDate: '2026-08-05',
+            bills: 195_000_000_000,
+            notesBonds: 3_900_000_000_000,
+            frn: 50_000_000_000,
+            tips: 380_000_000_000,
+            tipsInflationCompensation: 20_000_000_000,
+            mbs: 1_800_000_000_000,
+            cmbs: null,
+            agencies: 2_000_000_000,
+            total: 6_356_005_243_485,
+          },
+          yearAgo: {
+            asOfDate: '2025-07-30',
+            bills: 190_000_000_000,
+            notesBonds: 4_000_000_000_000,
+            frn: 50_000_000_000,
+            tips: 375_000_000_000,
+            tipsInflationCompensation: 19_000_000_000,
+            mbs: 2_000_000_000_000,
+            cmbs: null,
+            agencies: 2_000_000_000,
+            total: 6_600_000_000_000,
+          },
+          history: [
+            { asOfDate: '2026-07-29', total: 6_360_000_000_000 },
+            { asOfDate: '2026-08-05', total: 6_356_005_243_485 },
+          ],
+        },
+        repoOperations: [{
+          operationId: '2026-08-07-repo',
+          operationType: 'Repo',
+          operationMethod: 'Fixed Rate',
+          operationDate: '2026-08-07',
+          maturityDate: '2026-08-08',
+          term: 'Overnight',
+          totalAmountSubmitted: 1_000_000_000,
+          totalAmountAccepted: 1_000_000_000,
+          acceptedCounterparties: 3,
+          details: [{
+            securityType: 'Treasury',
+            amountSubmitted: 1_000_000_000,
+            amountAccepted: 1_000_000_000,
+            percentOfferingRate: 3.75,
+            percentAwardRate: 3.75,
+            percentWeightedAverageRate: null,
+          }],
+        }],
+        primaryDealers: [{
+          keyId: 'PDPOSGST-TOT',
+          label: 'Net Treasury positions',
+          note: 'Net outright positions in U.S. Treasury securities.',
+          asOfDate: '2026-07-29',
+          value: 473171,
+        }],
+        updatedAt: '2026-08-07T12:00:00.000Z',
+        providers: ['New York Fed'],
+        partial: false,
       }),
     });
   });
@@ -259,6 +364,12 @@ test('regional has no automated WCAG A/AA violations', async ({ page }) => {
     await loadedPage
       .getByRole('heading', { name: /Real GDP by state/ })
       .waitFor();
+  });
+});
+
+test('markets has no automated WCAG A/AA violations', async ({ page }) => {
+  await expectAccessible(page, '/markets', async (loadedPage) => {
+    await loadedPage.getByRole('heading', { name: 'SOMA holdings' }).waitFor();
   });
 });
 

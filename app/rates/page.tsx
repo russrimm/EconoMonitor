@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Landmark, Percent, RefreshCw, TrendingDown, TrendingUp } from 'lucide-react';
 import { getRates, type YieldSpread } from '@/lib/rates';
 import { YieldCurveChart } from '@/components/charts/YieldCurveChart';
+import { ReferenceRateHistoryChart } from '@/components/charts/ReferenceRateHistoryChart';
 import { QueryError } from '@/components/QueryError';
 
 function formatDate(date: string): string {
@@ -207,6 +208,13 @@ export default function RatesPage() {
                     className="text-right font-medium px-4 py-2.5 whitespace-nowrap"
                     style={{ color: 'var(--text-muted)' }}
                   >
+                    1st–99th pct
+                  </th>
+                  <th
+                    scope="col"
+                    className="text-right font-medium px-4 py-2.5 whitespace-nowrap"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
                     Volume ($B)
                   </th>
                   <th
@@ -250,6 +258,24 @@ export default function RatesPage() {
                       {rate.percent.toFixed(2)}%
                     </td>
                     <td
+                      className="text-right px-4 py-2.5 tabular-nums whitespace-nowrap"
+                      style={{ color: 'var(--text-muted)' }}
+                    >
+                      {rate.percentile1 === null || rate.percentile99 === null
+                        ? '—'
+                        : `${rate.percentile1.toFixed(2)}–${rate.percentile99.toFixed(2)}%`}
+                      {rate.percentile25 !== null &&
+                        rate.percentile75 !== null && (
+                          <span
+                            className="block text-xs"
+                            style={{ color: 'var(--text-muted)' }}
+                          >
+                            IQR {rate.percentile25.toFixed(2)}–
+                            {rate.percentile75.toFixed(2)}%
+                          </span>
+                        )}
+                    </td>
+                    <td
                       className="text-right px-4 py-2.5 tabular-nums"
                       style={{ color: 'var(--text-muted)' }}
                     >
@@ -264,6 +290,15 @@ export default function RatesPage() {
                       <time dateTime={rate.effectiveDate}>
                         {formatDate(rate.effectiveDate)}
                       </time>
+                      {rate.revised && (
+                        <span
+                          className="block text-xs"
+                          style={{ color: 'var(--text-muted)' }}
+                          title="Revised since first publication"
+                        >
+                          revised
+                        </span>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -288,6 +323,25 @@ export default function RatesPage() {
               .
             </p>
           )}
+        </section>
+      )}
+
+      {data && data.referenceRateHistory.length > 0 && (
+        <section aria-label="Reference rate history">
+          <h2 className="font-semibold mb-3" style={{ color: 'var(--text)' }}>
+            Overnight reference rates — last 180 days
+          </h2>
+          <div
+            className="rounded-xl p-4"
+            style={{
+              background: 'var(--surface)',
+              border: '1px solid var(--border)',
+            }}
+          >
+            <div className="h-80">
+              <ReferenceRateHistoryChart series={data.referenceRateHistory} />
+            </div>
+          </div>
         </section>
       )}
 
